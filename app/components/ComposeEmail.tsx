@@ -6,6 +6,7 @@ import { Banner, Button, Dialog, Input, Text } from "@cloudflare/kumo";
 import { FloppyDiskIcon, PaperPlaneTiltIcon } from "@phosphor-icons/react";
 import { useParams } from "react-router";
 import { useComposeForm } from "~/hooks/useComposeForm";
+import ComposeAttachments from "./ComposeAttachments";
 import RichTextEditor from "./RichTextEditor";
 import { useUIStore } from "~/hooks/useUIStore";
 
@@ -30,12 +31,20 @@ export default function ComposeEmail() {
 		setSubject,
 		body,
 		setBody,
+		attachments,
+		isDraggingAttachments,
 		error,
 		isSavingDraft,
 		isSending,
 		formTitle,
 		handleSaveDraft,
 		handleSend,
+		addAttachments,
+		removeAttachment,
+		handleAttachmentDragEnter,
+		handleAttachmentDragOver,
+		handleAttachmentDragLeave,
+		handleAttachmentDrop,
 	} = useComposeForm(mailboxId, folder);
 
 	return (
@@ -47,7 +56,14 @@ export default function ComposeEmail() {
 				<Dialog.Title className="text-lg font-semibold mb-5">
 					{formTitle}
 				</Dialog.Title>
-				<form onSubmit={(e) => handleSend(e, closeComposeModal)} className="space-y-4">
+				<form
+					onSubmit={(e) => handleSend(e, closeComposeModal)}
+					onDragEnterCapture={handleAttachmentDragEnter}
+					onDragOverCapture={handleAttachmentDragOver}
+					onDragLeaveCapture={handleAttachmentDragLeave}
+					onDropCapture={handleAttachmentDrop}
+					className="space-y-4"
+				>
 					{error && <Banner variant="error" text={error} />}
 					<div className="flex items-center gap-2">
 						<div className="flex-1">
@@ -106,6 +122,13 @@ export default function ComposeEmail() {
 						</Text>
 						<RichTextEditor value={body} onChange={setBody} />
 					</div>
+					<ComposeAttachments
+						attachments={attachments}
+						isDragging={isDraggingAttachments}
+						disabled={isSavingDraft || isSending}
+						onAddFiles={addAttachments}
+						onRemove={removeAttachment}
+					/>
 					<div className="flex justify-between items-center pt-2">
 						<Button
 							type="button"

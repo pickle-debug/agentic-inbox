@@ -6,6 +6,7 @@ import { Banner, Button, Input } from "@cloudflare/kumo";
 import { FloppyDiskIcon, PaperPlaneTiltIcon, XIcon } from "@phosphor-icons/react";
 import { useParams } from "react-router";
 import { useComposeForm } from "~/hooks/useComposeForm";
+import ComposeAttachments from "./ComposeAttachments";
 import RichTextEditor from "./RichTextEditor";
 
 export default function ComposePanel() {
@@ -27,12 +28,20 @@ export default function ComposePanel() {
 		setSubject,
 		body,
 		setBody,
+		attachments,
+		isDraggingAttachments,
 		error,
 		isSavingDraft,
 		isSending,
 		formTitle,
 		handleSaveDraft,
 		handleSend,
+		addAttachments,
+		removeAttachment,
+		handleAttachmentDragEnter,
+		handleAttachmentDragOver,
+		handleAttachmentDragLeave,
+		handleAttachmentDrop,
 		closeCompose,
 		closePanel,
 	} = useComposeForm(mailboxId, folder);
@@ -58,6 +67,10 @@ export default function ComposePanel() {
 
 			<form
 				onSubmit={(e) => handleSend(e, closePanel)}
+				onDragEnterCapture={handleAttachmentDragEnter}
+				onDragOverCapture={handleAttachmentDragOver}
+				onDragLeaveCapture={handleAttachmentDragLeave}
+				onDropCapture={handleAttachmentDrop}
 				className="flex flex-col flex-1 min-h-0 overflow-y-auto"
 			>
 				<div className="p-4 md:p-6 space-y-4">
@@ -146,6 +159,14 @@ export default function ComposePanel() {
 							onChange={setBody}
 						/>
 					</div>
+
+					<ComposeAttachments
+						attachments={attachments}
+						isDragging={isDraggingAttachments}
+						disabled={isSavingDraft || isSending}
+						onAddFiles={addAttachments}
+						onRemove={removeAttachment}
+					/>
 				</div>
 
 				{/* Footer actions */}

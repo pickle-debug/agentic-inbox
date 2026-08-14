@@ -3,7 +3,14 @@
 //     https://opensource.org/licenses/Apache-2.0
 
 import { useKumoToastManager } from "@cloudflare/kumo";
-import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { type DragEvent, type FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import {
+	composeAttachmentFromFile,
+	composeAttachmentFromStored,
+	materializeComposeAttachments,
+	serializeComposeAttachments,
+	type ComposeAttachment,
+} from "~/lib/compose-attachments";
 import {
 	buildQuotedReplyBlock,
 	escapeHtml,
@@ -17,6 +24,9 @@ import {
 import { useDeleteEmail, useForwardEmail, useReplyToEmail, useSaveDraft, useSendEmail } from "~/queries/emails";
 import { useMailbox } from "~/queries/mailboxes";
 import { useUIStore } from "~/hooks/useUIStore";
+import api from "~/services/api";
+
+const MAX_TOTAL_ATTACHMENT_BYTES = 25 * 1024 * 1024;
 
 function appendUniqueAddress(
 	addresses: string[],
@@ -178,10 +188,14 @@ export function useComposeForm(mailboxId?: string, _folder?: string) {
 	const [showCcBcc, setShowCcBcc] = useState(false);
 	const [subject, setSubject] = useState("");
 	const [body, setBody] = useState("");
+	const [attachments, setAttachments] = useState<ComposeAttachment[]>([]);
+	const [isDraggingAttachments, setIsDraggingAttachments] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 	const [isSavingDraft, setIsSavingDraft] = useState(false);
 	const [isSending, setIsSending] = useState(false);
+	const [activeDraftId, setActiveDraftId] = useState<string | undefined>();
 	const lastInitializedOptionsRef = useRef<typeof composeOptions | null>(null);
+	const dragDepthRef = useRef(0);
 	const isDraftEdit = !!composeOptions.draftEmail;
 
 	const formTitle = useMemo(() => {
@@ -207,12 +221,88 @@ export function useComposeForm(mailboxId?: string, _folder?: string) {
 		setShowCcBcc(initialFields.showCcBcc);
 		setSubject(initialFields.subject);
 		setBody(initialFields.body);
+		setAttachments(
+			composeOptions.draftEmail?.attachments
+				?.filter((attachment) => attachment.disposition !== "inline")
+				.map((attachment) =>
+					composeAttachmentFromStored(composeOptions.draftEmail!.id, attachment),
+				) ?? [],
+		);
+		setActiveDraftId(composeOptions.draftEmail?.id);
+		setIsDraggingAttachments(false);
+		dragDepthRef.current = 0;
 	}, [composeOptions, currentMailbox?.email, sigBlock]);
+
+	const addAttachments = (files: FileList | File[]) => {
+		const nextFiles = Array.from(files);
+		if (nextFiles.length === 0 || isSending || isSavingDraft) return;
+
+		const currentSize = attachments.reduce((total, attachment) => total + attachment.size, 0);
+		const accepted: ComposeAttachment[] = [];
+		let totalSize = currentSize;
+		for (const file of nextFiles) {
+			if (totalSize + file.size > MAX_TOTAL_ATTACHMENT_BYTES) break;
+			accepted.push(composeAttachmentFromFile(file));
+			totalSize += file.size;
+		}
+		setError(
+			accepted.length === nextFiles.length
+				? null
+				: "Attachments can be up to 25 MB in total.",
+		);
+		if (accepted.length > 0) {
+			setAttachments((current) => [...current, ...accepted]);
+		}
+	};
+
+	const removeAttachment = (id: string) => {
+		if (isSending || isSavingDraft) return;
+		setAttachments((current) => current.filter((attachment) => attachment.id !== id));
+	};
+
+	const isFileDrag = (event: DragEvent<HTMLElement>) =>
+		Array.from(event.dataTransfer.types).includes("Files");
+
+	const handleAttachmentDragEnter = (event: DragEvent<HTMLElement>) => {
+		if (!isFileDrag(event)) return;
+		event.preventDefault();
+		if (isSending || isSavingDraft) return;
+		dragDepthRef.current += 1;
+		setIsDraggingAttachments(true);
+	};
+
+	const handleAttachmentDragOver = (event: DragEvent<HTMLElement>) => {
+		if (!isFileDrag(event)) return;
+		event.preventDefault();
+		if (isSending || isSavingDraft) return;
+		event.dataTransfer.dropEffect = "copy";
+	};
+
+	const handleAttachmentDragLeave = (event: DragEvent<HTMLElement>) => {
+		if (!isFileDrag(event)) return;
+		dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+		if (dragDepthRef.current === 0) setIsDraggingAttachments(false);
+	};
+
+	const handleAttachmentDrop = (event: DragEvent<HTMLElement>) => {
+		if (!isFileDrag(event)) return;
+		event.preventDefault();
+		event.stopPropagation();
+		dragDepthRef.current = 0;
+		setIsDraggingAttachments(false);
+		addAttachments(event.dataTransfer.files);
+	};
+
+	const getOutgoingAttachments = () =>
+		serializeComposeAttachments(attachments, (emailId, attachmentId) =>
+			api.getAttachment(mailboxId!, emailId, attachmentId),
+		);
 
 	const handleSaveDraft = async () => {
 		if (!mailboxId || isSending) return; setIsSavingDraft(true); setError(null);
 		try {
-			await saveDraftMutation.mutateAsync({ mailboxId, draft: {
+			const outgoingAttachments = await getOutgoingAttachments();
+			const savedDraft = await saveDraftMutation.mutateAsync({ mailboxId, draft: {
 				to,
 				cc: cc || undefined,
 				bcc: bcc || undefined,
@@ -220,8 +310,11 @@ export function useComposeForm(mailboxId?: string, _folder?: string) {
 				body,
 				in_reply_to: composeOptions.originalEmail?.id || composeOptions.draftEmail?.in_reply_to || undefined,
 				thread_id: composeOptions.originalEmail?.thread_id || composeOptions.draftEmail?.thread_id || undefined,
-				draft_id: composeOptions.draftEmail?.id || undefined,
+				draft_id: activeDraftId,
+				attachments: outgoingAttachments,
 			} });
+			setActiveDraftId(savedDraft.id);
+			setAttachments((current) => materializeComposeAttachments(current, outgoingAttachments));
 			toastManager.add({ title: "Draft saved!" });
 		}
 		catch (err: unknown) {
@@ -240,6 +333,17 @@ export function useComposeForm(mailboxId?: string, _folder?: string) {
 		const ccRecipients = splitEmailList(cc); const bccRecipients = splitEmailList(bcc);
 		const fromName = currentMailbox.settings?.fromName || currentMailbox.name;
 		const from = fromName && fromName !== currentMailbox.email ? { email: currentMailbox.email, name: fromName } : currentMailbox.email;
+		setIsSending(true); toastManager.add({ title: "Sending email..." });
+		let outgoingAttachments;
+		try {
+			outgoingAttachments = await getOutgoingAttachments();
+		} catch (err: unknown) {
+			const message = (err instanceof Error ? err.message : null) || "Failed to read attachments.";
+			setError(message);
+			toastManager.add({ title: message, variant: "error" });
+			setIsSending(false);
+			return;
+		}
 		const emailData = {
 			to: toEmailListValue(toRecipients),
 			cc: toEmailListValue(ccRecipients),
@@ -248,9 +352,9 @@ export function useComposeForm(mailboxId?: string, _folder?: string) {
 			subject,
 			html: body,
 			text: htmlToPlainText(body),
+			attachments: outgoingAttachments,
 		};
-		const draftId = composeOptions.draftEmail?.id; const mode = composeOptions.mode; const originalId = composeOptions.originalEmail?.id || composeOptions.draftEmail?.in_reply_to;
-		setIsSending(true); toastManager.add({ title: "Sending email..." });
+		const draftId = activeDraftId; const mode = composeOptions.mode; const originalId = composeOptions.originalEmail?.id || composeOptions.draftEmail?.in_reply_to;
 		try {
 			if ((mode === "reply" || mode === "reply-all") && originalId) await replyMutation.mutateAsync({ mailboxId, emailId: originalId, email: emailData });
 			else if (mode === "forward" && originalId) await forwardMutation.mutateAsync({ mailboxId, emailId: originalId, email: emailData });
@@ -262,5 +366,12 @@ export function useComposeForm(mailboxId?: string, _folder?: string) {
 		finally { setIsSending(false); }
 	};
 
-	return { to, setTo, cc, setCc, bcc, setBcc, showCcBcc, setShowCcBcc, subject, setSubject, body, setBody, error, setError, isSavingDraft, isSending, formTitle, handleSaveDraft, handleSend, closeCompose, closePanel };
+	return {
+		to, setTo, cc, setCc, bcc, setBcc, showCcBcc, setShowCcBcc,
+		subject, setSubject, body, setBody, attachments, isDraggingAttachments,
+		error, setError, isSavingDraft, isSending, formTitle, handleSaveDraft,
+		handleSend, addAttachments, removeAttachment, handleAttachmentDragEnter,
+		handleAttachmentDragOver, handleAttachmentDragLeave, handleAttachmentDrop,
+		closeCompose, closePanel,
+	};
 }
