@@ -10,6 +10,8 @@
  * See: https://developers.cloudflare.com/email-service/api/send-emails/workers-api/
  */
 
+import { decodeBase64Bytes } from "./lib/attachments";
+
 export interface SendEmailParams {
 	to: string | string[];
 	from: string | { email: string; name: string };
@@ -20,7 +22,7 @@ export interface SendEmailParams {
 	bcc?: string | string[];
 	replyTo?: string | { email: string; name: string };
 	attachments?: {
-		content: string; // base64 encoded
+		content: string; // base64 encoded at the API boundary
 		filename: string;
 		type: string;
 		disposition: "attachment" | "inline";
@@ -59,7 +61,9 @@ export async function sendEmail(
 
 	if (params.attachments && params.attachments.length > 0) {
 		message.attachments = params.attachments.map((att) => ({
-			content: att.content,
+			// A string is treated as literal attachment text and then MIME-encoded
+			// by Email Service. Pass raw bytes to avoid attaching the base64 text.
+			content: decodeBase64Bytes(att.content),
 			filename: att.filename,
 			type: att.type,
 			disposition: att.disposition,

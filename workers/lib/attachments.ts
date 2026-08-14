@@ -18,6 +18,15 @@ export interface StoredAttachment {
 	disposition: string;
 }
 
+export function decodeBase64Bytes(content: string): Uint8Array {
+	const binary = atob(content);
+	const bytes = new Uint8Array(binary.length);
+	for (let index = 0; index < binary.length; index += 1) {
+		bytes[index] = binary.charCodeAt(index);
+	}
+	return bytes;
+}
+
 /**
  * Store base64-encoded attachments to R2 and return metadata for the DO.
  */
@@ -40,8 +49,7 @@ export async function storeAttachments(
 		// Sanitize filename to prevent path traversal in R2 keys
 		const safeFilename = (att.filename || "untitled").replace(/[\/\\:*?"<>|\x00-\x1f]/g, "_");
 		const key = `attachments/${emailId}/${attachmentId}/${safeFilename}`;
-		const binaryStr = atob(att.content);
-		const bytes = Uint8Array.from(binaryStr, (c) => c.charCodeAt(0));
+		const bytes = decodeBase64Bytes(att.content);
 		await bucket.put(key, bytes);
 		results.push({
 			id: attachmentId,
