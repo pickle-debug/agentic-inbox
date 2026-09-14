@@ -20,12 +20,14 @@ export default function SettingsRoute() {
 
 	const [displayName, setDisplayName] = useState("");
 	const [agentPrompt, setAgentPrompt] = useState("");
+	const [autoDraftEnabled, setAutoDraftEnabled] = useState(false);
 	const [isSaving, setIsSaving] = useState(false);
 
 	useEffect(() => {
 		if (mailbox) {
 			setDisplayName(mailbox.settings?.fromName || mailbox.name || "");
 			setAgentPrompt(mailbox.settings?.agentSystemPrompt || "");
+			setAutoDraftEnabled(mailbox.settings?.autoDraftRepliesEnabled === true);
 		}
 	}, [mailbox]);
 
@@ -36,6 +38,7 @@ export default function SettingsRoute() {
 			...mailbox.settings,
 			fromName: displayName,
 			agentSystemPrompt: agentPrompt.trim() || undefined,
+			autoDraftRepliesEnabled: autoDraftEnabled,
 		};
 		try {
 			await updateMailboxMutation.mutateAsync({ mailboxId, settings });
@@ -82,6 +85,25 @@ export default function SettingsRoute() {
 						/>
 						<Input label="Email" type="email" value={mailbox.email} disabled />
 					</div>
+				</div>
+
+				{/* Automatic Draft Replies */}
+				<div className="rounded-lg border border-kumo-line bg-kumo-base p-5">
+					<div className="text-sm font-medium text-kumo-default mb-2">
+						Automatic Draft Replies
+					</div>
+					<label className="flex items-start gap-3 cursor-pointer">
+						<input
+							type="checkbox"
+							checked={autoDraftEnabled}
+							onChange={(e) => setAutoDraftEnabled(e.target.checked)}
+							className="mt-0.5 size-4 accent-kumo-accent"
+						/>
+						<span>
+							<span className="block text-sm text-kumo-default">Create a reply draft when new mail arrives</span>
+							<span className="block text-xs text-kumo-subtle mt-1">Off by default. When disabled, incoming mail is stored without generating an AI reply.</span>
+						</span>
+					</label>
 				</div>
 
 				{/* Agent System Prompt */}
