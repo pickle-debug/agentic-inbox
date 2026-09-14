@@ -2,8 +2,8 @@
 // Licensed under the Apache 2.0 license found in the LICENSE file or at:
 //     https://opensource.org/licenses/Apache-2.0
 
+import { getAgentByName } from "agents";
 import { type Context, Hono } from "hono";
-import { cors } from "hono/cors";
 import PostalMime from "postal-mime";
 import { z } from "zod";
 import { sendEmail } from "./email-sender";
@@ -17,6 +17,8 @@ import {
 } from "./lib/email-helpers";
 import { SendEmailRequestSchema } from "./lib/schemas";
 import { handleReplyEmail, handleForwardEmail } from "./routes/reply-forward";
+import { authStore } from "./auth";
+import { bodyLimit } from "hono/body-limit";
 import { Folders } from "../shared/folders";
 import type { Env } from "./types";
 import { requireMailbox, type MailboxContext } from "./lib/mailbox";
@@ -76,21 +78,22 @@ function boolQuery(c: AppContext, key: string): boolean | undefined {
 // -- App & middleware -----------------------------------------------
 
 const app = new Hono<MailboxContext>();
-app.use("/api/*", cors({
-	origin: (origin) => {
-		// Same-origin requests have no Origin header — allow them.
-		if (!origin) return origin;
-		// In development, allow localhost for Vite dev server.
-		try {
-			const url = new URL(origin);
-			if (url.hostname === "localhost" || url.hostname === "127.0.0.1") return origin;
-		} catch { /* invalid origin */ }
-		// Block all other cross-origin requests. The app is served from the
-		// same origin as the API, so legitimate browser requests never send
-		// an Origin header. Returning undefined omits Access-Control-Allow-Origin.
-		return undefined;
-	},
-}));
+// Every API request needs an identity, even if this router is mounted elsewhere.
+app.use("/api/*", async (c, next) => {
+	if (!c.var.identity) return c.json({ error: "请先登录。" }, 401);
+	return next();
+});
+app.use("/api/v1/mailboxes/:mailboxId/*", async (c, next) => {
+	const identity = c.var.identity;
+	if (identity.role !== "admin" && c.req.param("mailboxId") !== identity.email) return c.json({ error: "无权访问该邮箱。" }, 403);
+	if (identity.role !== "admin" && (c.req.path.endsWith("/login") || (c.req.method === "DELETE" && c.req.path.split("/").length === 5))) return c.json({ error: "仅管理员可执行此操作。" }, 403);
+	return next();
+});
+app.use("/api/v1/mailboxes/:mailboxId/login", async (c, next) => {
+	if (c.var.identity.role !== "admin") return c.json({ error: "仅管理员可管理密码。" }, 403);
+	return next();
+});
+app.use("/api/v1/mailboxes/:mailboxId/login", bodyLimit({ maxSize: 2048 }));
 app.use("/api/v1/mailboxes/:mailboxId/*", requireMailbox);
 
 // -- Config ---------------------------------------------------------
@@ -99,19 +102,22 @@ app.get("/api/v1/config", (c) => {
 	const domainsRaw = c.env.DOMAINS || "";
 	const domains = domainsRaw.split(",").map((d) => d.trim()).filter(Boolean);
 	const emailAddresses = c.env.EMAIL_ADDRESSES ?? [];
-	return c.json({ domains, emailAddresses });
+	return c.json(c.var.identity.role === "admin" ? { domains, emailAddresses } : { domains: [], emailAddresses: [] });
 });
 
 // -- Mailboxes ------------------------------------------------------
 
 app.get("/api/v1/mailboxes", async (c) => {
 	const allMailboxes = await listMailboxes(c.env.BUCKET);
-	return c.json(allMailboxes.map((m) => ({ ...m, name: m.id })));
+	return c.json(allMailboxes.filter(m => c.var.identity.role === "admin" || m.id === c.var.identity.email).map((m) => ({ ...m, name: m.id })));
 });
 
 app.post("/api/v1/mailboxes", async (c) => {
+	if (c.var.identity.role !== "admin") return c.json({ error: "仅管理员可以创建邮箱。" }, 403);
 	const { name, settings, email: rawEmail } = CreateMailboxBody.parse(await c.req.json());
 	const email = rawEmail.toLowerCase();
+	const domains = (c.env.DOMAINS || "").split(",").map(d => d.trim().toLowerCase());
+	if (!domains.includes(email.split("@")[1])) return c.json({ error: "邮箱必须属于已配置的域名。" }, 400);
 	const allowedAddresses = (c.env.EMAIL_ADDRESSES ?? []) as string[];
 	if (allowedAddresses.length > 0 && !allowedAddresses.map((a) => a.toLowerCase()).includes(email)) {
 		return c.json({ error: "Mailbox creation is restricted to configured EMAIL_ADDRESSES" }, 403);
@@ -143,11 +149,31 @@ app.put("/api/v1/mailboxes/:mailboxId", async (c) => {
 });
 
 app.delete("/api/v1/mailboxes/:mailboxId", async (c) => {
+	if (c.var.identity.role !== "admin") return c.json({ error: "仅管理员可以删除邮箱。" }, 403);
 	const mailboxId = c.req.param("mailboxId")!;
 	const key = `mailboxes/${mailboxId}.json`;
 	if (!(await c.env.BUCKET.head(key))) return c.json({ error: "Not found" }, 404);
+	await authStore(c.env).disable(mailboxId);
+	await c.env.EMAIL_AGENT.get(c.env.EMAIL_AGENT.idFromName(mailboxId)).disconnectClients();
 	await c.env.BUCKET.delete(key); // TODO: also delete DO data and R2 attachment blobs
 	return c.body(null, 204);
+});
+
+// Credentials live separately from public mailbox settings and are never returned.
+app.get("/api/v1/mailboxes/:mailboxId/login", async (c) => c.json(await authStore(c.env).status(c.req.param("mailboxId"))));
+app.put("/api/v1/mailboxes/:mailboxId/login", async (c) => {
+	const body = z.object({ password: z.string().min(12).max(128) }).safeParse(await c.req.json().catch(() => null));
+	if (!body.success) return c.json({ error: "密码长度必须为 12–128 个字符。" }, 400);
+	const mailboxId = c.req.param("mailboxId");
+	const result = await authStore(c.env).setPassword(mailboxId, body.data.password);
+	await c.env.EMAIL_AGENT.get(c.env.EMAIL_AGENT.idFromName(mailboxId)).disconnectClients();
+	return c.json(result);
+});
+app.delete("/api/v1/mailboxes/:mailboxId/login", async (c) => {
+	const mailboxId = c.req.param("mailboxId");
+	const result = await authStore(c.env).disable(mailboxId);
+	await c.env.EMAIL_AGENT.get(c.env.EMAIL_AGENT.idFromName(mailboxId)).disconnectClients();
+	return c.json(result);
 });
 
 // -- Emails ---------------------------------------------------------
@@ -335,7 +361,7 @@ app.get("/api/v1/mailboxes/:mailboxId/emails/:emailId/attachments/:attachmentId"
 	const emailId = c.req.param("emailId")!;
 	const attachmentId = c.req.param("attachmentId")!;
 	const attachment = await c.var.mailboxStub.getAttachment(attachmentId);
-	if (!attachment) return c.json({ error: "Attachment not found" }, 404);
+	if (!attachment || attachment.email_id !== emailId) return c.json({ error: "Attachment not found" }, 404);
 	const obj = await c.env.BUCKET.get(`attachments/${emailId}/${attachmentId}/${attachment.filename}`);
 	if (!obj) return c.json({ error: "Attachment file not found" }, 404);
 	const headers = new Headers();
@@ -422,7 +448,7 @@ async function receiveEmail(event: { raw: ReadableStream; rawSize: number }, env
 		thread_id: threadId, message_id: originalMessageId, raw_headers: JSON.stringify(parsedEmail.headers),
 	}, attachmentData);
 
-	const agentStub = env.EMAIL_AGENT.get(env.EMAIL_AGENT.idFromName(mailboxId));
+	const agentStub = await getAgentByName(env.EMAIL_AGENT, mailboxId);
 	ctx.waitUntil(agentStub.fetch(new Request("https://agents/onNewEmail", {
 		method: "POST", headers: { "Content-Type": "application/json" },
 		body: JSON.stringify({ mailboxId, emailId: messageId, sender: (parsedEmail.from?.address || "").toLowerCase(), subject: parsedEmail.subject || "", threadId }),

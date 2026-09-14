@@ -2,6 +2,8 @@
 // Licensed under the Apache 2.0 license found in the LICENSE file or at:
 //     https://opensource.org/licenses/Apache-2.0
 
+import { useQuery } from "@tanstack/react-query";
+import api from "~/services/api";
 import { Loader } from "@cloudflare/kumo";
 import { PlugsIcon, RobotIcon } from "@phosphor-icons/react";
 import { useEffect, useState } from "react";
@@ -41,6 +43,7 @@ function LazyAgentPanel() {
 }
 
 export default function AgentSidebar() {
+	const { data: session } = useQuery({ queryKey: ["session"], queryFn: api.getSession });
 	const [activeTab, setActiveTab] = useState<"agent" | "mcp">("agent");
 
 	return (
@@ -59,7 +62,7 @@ export default function AgentSidebar() {
 					<RobotIcon size={14} weight={activeTab === "agent" ? "fill" : "regular"} />
 					Agent
 				</button>
-				<button
+				{session?.role === "admin" && <button
 					type="button"
 					onClick={() => setActiveTab("mcp")}
 					className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium transition-colors border-b-2 bg-transparent cursor-pointer ${
@@ -70,7 +73,7 @@ export default function AgentSidebar() {
 				>
 					<PlugsIcon size={14} weight={activeTab === "mcp" ? "fill" : "regular"} />
 					MCP
-				</button>
+				</button>}
 			</div>
 
 			{/* Tab content — keep agent mounted so chat isn't lost */}
@@ -78,7 +81,7 @@ export default function AgentSidebar() {
 				<div className={activeTab === "agent" ? "h-full" : "hidden"}>
 					<LazyAgentPanel />
 				</div>
-				{activeTab === "mcp" && <MCPPanel />}
+				{session?.role === "admin" && activeTab === "mcp" && <MCPPanel />}
 			</div>
 		</div>
 	);

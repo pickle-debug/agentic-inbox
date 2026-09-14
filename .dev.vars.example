@@ -1,3 +1,9 @@
 # Cloudflare Access (required in production). TEAM_DOMAIN may be the base Access URL or the full /cdn-cgi/access/certs URL.
 POLICY_AUD=your-access-policy-audience-tag
 TEAM_DOMAIN=https://your-team.cloudflareaccess.com
+
+# Single-site HTTPS origin. Protect /auth/admin/session with Cloudflare Access.
+# POLICY_AUD above is the Access application AUD (not an Allow policy ID).
+ADMIN_ORIGIN=https://agentic-inbox.your-account.workers.dev
+# Optional LOCAL development only; ignored in production
+# DEV_ADMIN_EMAIL=admin@example.test

@@ -2,6 +2,8 @@
 // Licensed under the Apache 2.0 license found in the LICENSE file or at:
 //     https://opensource.org/licenses/Apache-2.0
 
+import { authStore } from "../auth";
+import type { Connection } from "agents";
 import { AIChatAgent } from "@cloudflare/ai-chat";
 import {
 	streamText,
@@ -273,6 +275,58 @@ function createEmailTools(env: Env, mailboxId: string) {
 // SEND_EMAIL binding shape and the AIChatAgent constraint.  The actual env
 // is fully typed inside the tools via the closure.
 export class EmailAgent extends AIChatAgent<any> {
+	constructor(ctx: DurableObjectState, env: Env) {
+		super(ctx, env);
+		// Wrap after the SDK constructor so authentication runs before its handlers.
+		const connect = this.onConnect.bind(this);
+		this.onConnect = async (connection, context) => {
+			const headers = context.request.headers;
+			connection.setState({ ...connection.state as object, inboxAuth: {
+				role: headers.get("x-inbox-role"), email: headers.get("x-inbox-email"),
+				token: headers.get("x-inbox-session"), expires: Number(headers.get("x-inbox-expiry")),
+			} });
+			if (!(await this.validConnection(connection))) { connection.close(1008, "Please sign in again"); return; }
+			return connect(connection, context);
+		};
+		const message = this.onMessage.bind(this);
+		this.onMessage = async (connection, data) => {
+			if (!(await this.validConnection(connection))) { connection.close(1008, "Please sign in again"); return; }
+			return message(connection, data);
+		};
+	}
+
+	private async validConnection(connection: Connection) {
+		const auth = (connection.state as { inboxAuth?: { role: string; email: string; token: string; expires: number } } | null)?.inboxAuth;
+		if (!auth || !Number.isFinite(auth.expires) || auth.expires <= Date.now()) return false;
+		if (auth.token) {
+			const session = await authStore(this.env).session(auth.token);
+			if (!session || session.role !== auth.role || session.email !== auth.email) return false;
+			return session.role === "admin" || session.email === this.name;
+		}
+		if (auth.role === "admin") return true;
+		if (auth.role !== "mailbox" || auth.email !== this.name) return false;
+		return (await authStore(this.env).session(auth.token))?.email === this.name;
+	}
+
+	broadcast(message: string, without: string[] = []) {
+		// Revalidate persisted sessions for passive recipients too, including admins.
+		this.ctx.waitUntil((async () => {
+			const excluded = new Set(without);
+			for (const connection of this.getConnections()) {
+				if (!(await this.validConnection(connection))) {
+					connection.close(1008, "Session expired");
+				} else if (!excluded.has(connection.id) && connection.readyState === WebSocket.OPEN) {
+					connection.send(message);
+				}
+			}
+		})());
+	}
+
+	// Private binding RPC only; deliberately not marked callable for browser clients.
+	disconnectClients() {
+		for (const connection of this.getConnections()) connection.close(1008, "Login changed; please reconnect");
+	}
+
 	async onChatMessage(onFinish: any) {
 		const env = this.env as Env;
 		const mailboxId = this.name;
@@ -299,6 +353,7 @@ export class EmailAgent extends AIChatAgent<any> {
 	async onRequest(request: Request): Promise<Response> {
 		const url = new URL(request.url);
 		if (url.pathname === "/onNewEmail" && request.method === "POST") {
+			if (request.headers.has("x-inbox-role")) return new Response("Forbidden", { status: 403 });
 			try {
 				const emailData = await request.json() as {
 					mailboxId: string;
@@ -307,6 +362,7 @@ export class EmailAgent extends AIChatAgent<any> {
 					subject: string;
 					threadId: string;
 				};
+				if (emailData.mailboxId !== this.name) return new Response("Forbidden", { status: 403 });
 				const result = await this.handleNewEmail(emailData);
 				return new Response(JSON.stringify(result), {
 					headers: { "Content-Type": "application/json" },

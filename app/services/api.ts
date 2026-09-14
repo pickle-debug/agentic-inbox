@@ -40,6 +40,7 @@ async function request<T>(
 			},
 		});
 
+		if (res.status === 401 && url !== "/auth/login" && typeof window !== "undefined") window.location.assign("/login");
 		if (!res.ok) {
 			const body = await res.json().catch(() => ({}));
 			throw new ApiError(res.status, body as Record<string, unknown>);
@@ -95,6 +96,13 @@ interface EmailListResponse {
 // ---------- API client ----------
 
 const api = {
+	getSession: () => get<{ role: "admin" | "mailbox"; email: string }>("/auth/session"),
+	getLoginConfig: () => get<{ adminLoginUrl: string | null }>("/auth/config"),
+	login: (email: string, password: string) => post("/auth/login", { email, password }),
+	logout: () => post<{ redirect: string }>("/auth/logout"),
+	getMailboxLogin: (id: string) => get<{ enabled: boolean }>(`/api/v1/mailboxes/${encodeURIComponent(id)}/login`),
+	setMailboxPassword: (id: string, password: string) => put<{ enabled: boolean }>(`/api/v1/mailboxes/${encodeURIComponent(id)}/login`, { password }),
+	disableMailboxLogin: (id: string) => del<{ enabled: boolean }>(`/api/v1/mailboxes/${encodeURIComponent(id)}/login`),
 	// Config
 	getConfig: () =>
 		get<{ domains: string[]; emailAddresses: string[] }>("/api/v1/config"),

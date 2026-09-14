@@ -48,7 +48,7 @@ https://github.com/cloudflare/agentic-inbox/issues/4#issuecomment-4269118513
 - **Frontend:** React 19, React Router v7, Tailwind CSS, Zustand, TipTap, `@cloudflare/kumo`
 - **Backend:** Hono, Cloudflare Workers, Durable Objects (SQLite), R2, Email Routing
 - **AI Agent:** Cloudflare Agents SDK (`AIChatAgent`), AI SDK v6, Workers AI (`@cf/moonshotai/kimi-k2.5`), `react-markdown` + `remark-gfm`
-- **Auth:** Cloudflare Access JWT validation (required outside local development)
+- **Auth:** Cloudflare Access for administrators; scoped password sessions for mailbox users
 
 ## Getting Started
 
@@ -56,6 +56,8 @@ https://github.com/cloudflare/agentic-inbox/issues/4#issuecomment-4269118513
 npm install
 npm run dev
 ```
+
+Local development is signed out by default. To work as an administrator locally, set `DEV_ADMIN_EMAIL=admin@example.test` in `.dev.vars`; this setting is ignored by production builds.
 
 ### Configuration
 
@@ -76,7 +78,7 @@ npm run deploy
 - [Workers AI](https://developers.cloudflare.com/workers-ai/) enabled (for the agent)
 - [Cloudflare Access](https://developers.cloudflare.com/cloudflare-one/policies/access/) configured for deployed/shared environments (required in production)
 
-Any user who passes the shared Cloudflare Access policy can access all mailboxes in this app by design. This includes the MCP server at `/mcp` -- external AI tools (Claude Code, Cursor, etc.) connected via MCP can operate on any mailbox by passing a `mailboxId` parameter. There is no per-mailbox authorization; the Cloudflare Access policy is the single trust boundary.
+A single website can offer both login methods: protect `/auth/admin/session` with Access and let the Worker authenticate the rest of the application using its own sessions. Users admitted by the administrator Cloudflare Access application are administrators and can manage every mailbox. Internal mailbox users sign in with the password configured by an administrator and can access only that mailbox. MCP remains administrator-only. See [dual-login setup](docs/dual-login.md) before exposing the password-login hostname.
 
 ## Architecture
 

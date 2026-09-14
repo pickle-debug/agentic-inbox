@@ -16,6 +16,7 @@ import { EnvelopeIcon, PlusIcon, TrashIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import { type FormEvent, useEffect, useRef, useState } from "react";
 import { Link as RouterLink } from "react-router";
+import { MailboxPasswordDialog } from "~/components/MailboxPasswordDialog";
 import api from "~/services/api";
 import {
 	useCreateMailbox,
@@ -33,6 +34,10 @@ export default function HomeRoute() {
 	const { data: mailboxes = [], refetch: refetchMailboxes, isFetched: mailboxesFetched } = useMailboxes();
 	const createMailbox = useCreateMailbox();
 	const deleteMailbox = useDeleteMailbox();
+	const { data: session } = useQuery({
+		queryKey: ["session"],
+		queryFn: () => api.getSession(),
+	});
 
 	const { data: configData } = useQuery({
 		queryKey: queryKeys.config,
@@ -55,6 +60,11 @@ export default function HomeRoute() {
 		email: string;
 	} | null>(null);
 	const [isDeleting, setIsDeleting] = useState(false);
+	const [mailboxForPassword, setMailboxForPassword] = useState<{
+		id: string;
+		email: string;
+	} | null>(null);
+	const isAdmin = session?.role === "admin";
 
 	// Set default domain when config loads
 	useEffect(() => {
@@ -67,7 +77,7 @@ export default function HomeRoute() {
 	const autoCreateDone = useRef(false);
 	useEffect(() => {
 		if (autoCreateDone.current) return;
-		if (emailAddresses.length === 0 || !mailboxesFetched) return;
+		if (!isAdmin || emailAddresses.length === 0 || !mailboxesFetched) return;
 		const existingEmails = new Set(
 			mailboxes.map((m) => m.email.toLowerCase()),
 		);
@@ -87,7 +97,7 @@ export default function HomeRoute() {
 			}),
 		).then(() => { if (!cancelled) refetchMailboxes(); });
 		return () => { cancelled = true; };
-	}, [emailAddresses, mailboxes, refetchMailboxes]);
+	}, [emailAddresses, isAdmin, mailboxes, refetchMailboxes]);
 
 	const handleCreate = async (e: FormEvent) => {
 		e.preventDefault();
@@ -128,7 +138,7 @@ export default function HomeRoute() {
 		}
 	};
 
-	const isConfigured = emailAddresses.length > 0;
+	const isConfigured = isAdmin && emailAddresses.length > 0;
 	const accounts = isConfigured
 		? emailAddresses.map((addr) => ({
 				id: addr,
@@ -144,16 +154,22 @@ export default function HomeRoute() {
 			<div className="mx-auto max-w-2xl px-4 py-8 md:px-6 md:py-16">
 				<div className="mb-8">
 					<div className="flex items-center justify-between">
-						<h1 className="text-2xl font-bold text-kumo-default">Mailboxes</h1>
-						{!isConfigured && (
+						<div>
+							<h1 className="text-2xl font-bold text-kumo-default">邮箱</h1>
+							{session && <p className="mt-1 text-sm text-kumo-subtle">{session.email} · {isAdmin ? "管理员" : "邮箱账号"}</p>}
+						</div>
+						<div className="flex items-center gap-2">
+						{isAdmin && !isConfigured && (
 							<Button
 								variant="primary"
 								icon={<PlusIcon size={16} />}
 								onClick={() => setIsCreateOpen(true)}
 							>
-								New Mailbox
+								新建邮箱
 							</Button>
 						)}
+						{session && <Button variant="secondary" size="sm" onClick={async () => { const result = await api.logout(); window.location.href = result.redirect; }}>退出登录</Button>}
+						</div>
 					</div>
 					{domains.length > 0 && (
 						<p className="text-sm text-kumo-subtle mt-1">
@@ -187,7 +203,7 @@ export default function HomeRoute() {
 										{account.email}
 									</div>
 								</div>
-								{!isConfigured && (
+								{isAdmin && !isConfigured && (
 									<Button
 										variant="ghost"
 										size="sm"
@@ -204,6 +220,19 @@ export default function HomeRoute() {
 											setIsDeleteOpen(true);
 										}}
 									/>
+								)}
+								{isAdmin && (
+									<Button
+										variant="ghost"
+										size="sm"
+										onClick={(event) => {
+											event.preventDefault();
+											event.stopPropagation();
+											setMailboxForPassword({ id: account.id, email: account.email });
+										}}
+									>
+										密码登录
+									</Button>
 								)}
 							</RouterLink>
 						))}
@@ -226,7 +255,7 @@ export default function HomeRoute() {
 									? "Your email routing is configured but no mailboxes have been created yet. They will appear here automatically."
 									: "Create a mailbox to start sending and receiving emails with your domain."}
 							</p>
-							{!isConfigured && (
+							{isAdmin && !isConfigured && (
 								<Button
 									variant="primary"
 									icon={<PlusIcon size={16} />}
@@ -358,6 +387,15 @@ export default function HomeRoute() {
 					</div>
 				</Dialog>
 			</Dialog.Root>
+
+			{mailboxForPassword && (
+				<MailboxPasswordDialog
+					mailboxId={mailboxForPassword.id}
+					email={mailboxForPassword.email}
+					open={true}
+					onOpenChange={(open) => { if (!open) setMailboxForPassword(null); }}
+				/>
+			)}
 		</div>
 	);
 }
