@@ -10,8 +10,10 @@ import ComposeAttachments from "./ComposeAttachments";
 import ContactRecipientInput from "./ContactRecipientInput";
 import RichTextEditor from "./RichTextEditor";
 import { useUIStore } from "~/hooks/useUIStore";
+import { useI18n } from "~/hooks/useI18n";
 
 export default function ComposeEmail() {
+	const { t } = useI18n();
 	const { mailboxId, folder } = useParams<{
 		mailboxId: string;
 		folder: string;
@@ -69,8 +71,8 @@ export default function ComposeEmail() {
 					<div className="flex items-center gap-2">
 						<div className="flex-1 min-w-0">
 							<ContactRecipientInput
-								label="To"
-								accessibleLabel="Recipients"
+								label={t("To", "收件人")}
+								accessibleLabel={t("Recipients", "收件人")}
 								value={to}
 								onChange={setTo}
 								disabled={isSending || isSavingDraft}
@@ -83,14 +85,14 @@ export default function ComposeEmail() {
 								onClick={() => setShowCcBcc(true)}
 								className="shrink-0 text-xs text-kumo-link hover:text-kumo-link-hover font-medium mt-5"
 							>
-								CC / BCC
+								{t("CC / BCC", "抄送 / 密送")}
 							</button>
 						)}
 					</div>
 					{showCcBcc && (
 						<ContactRecipientInput
-							label="CC"
-							accessibleLabel="CC"
+							label={t("CC", "抄送")}
+							accessibleLabel={t("CC", "抄送")}
 							value={cc}
 							onChange={setCc}
 							disabled={isSending || isSavingDraft}
@@ -98,17 +100,17 @@ export default function ComposeEmail() {
 					)}
 					{showCcBcc && (
 						<ContactRecipientInput
-							label="BCC"
-							accessibleLabel="BCC"
+							label={t("BCC", "密送")}
+							accessibleLabel={t("BCC", "密送")}
 							value={bcc}
 							onChange={setBcc}
 							disabled={isSending || isSavingDraft}
 						/>
 					)}
 					<Input
-						label="Subject"
+						label={t("Subject", "主题")}
 						type="text"
-						placeholder="Email subject"
+						placeholder={t("Email subject", "邮件主题")}
 						size="sm"
 						value={subject}
 						onChange={(e) => setSubject(e.target.value)}
@@ -116,7 +118,7 @@ export default function ComposeEmail() {
 					/>
 					<div>
 						<Text size="sm" DANGEROUS_className="font-medium mb-1.5 block">
-							Message
+							{t("Message", "正文")}
 						</Text>
 						<RichTextEditor value={body} onChange={setBody} />
 					</div>
@@ -135,7 +137,7 @@ export default function ComposeEmail() {
 							onClick={closeComposeModal}
 							disabled={isSending}
 						>
-							Discard
+							{t("Discard", "放弃")}
 						</Button>
 						<div className="flex items-center gap-2">
 							<Button
@@ -147,7 +149,7 @@ export default function ComposeEmail() {
 								icon={<FloppyDiskIcon size={14} />}
 								onClick={handleSaveDraft}
 							>
-								{isSavingDraft ? "Saving..." : "Save as Draft"}
+								{isSavingDraft ? t("Saving...", "正在保存…") : t("Save as Draft", "存为草稿")}
 							</Button>
 							<Button
 								type="submit"
@@ -157,7 +159,7 @@ export default function ComposeEmail() {
 								disabled={isSavingDraft || isSending}
 								icon={<PaperPlaneTiltIcon size={14} />}
 							>
-								{isSending ? "Sending..." : "Send"}
+								{isSending ? t("Sending...", "正在发送…") : t("Send", "发送")}
 							</Button>
 						</div>
 					</div>

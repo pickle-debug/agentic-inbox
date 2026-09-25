@@ -8,8 +8,10 @@ import { Loader } from "@cloudflare/kumo";
 import { PlugsIcon, RobotIcon } from "@phosphor-icons/react";
 import { useEffect, useState } from "react";
 import MCPPanel from "./MCPPanel";
+import { useI18n } from "~/hooks/useI18n";
 
 function LazyAgentPanel() {
+	const { t } = useI18n();
 	const [AgentChat, setAgentChat] = useState<React.ComponentType | null>(
 		null,
 	);
@@ -27,7 +29,7 @@ function LazyAgentPanel() {
 	if (loadError) {
 		return (
 			<div className="flex items-center justify-center h-full">
-				<span className="text-xs text-kumo-error">{loadError}</span>
+				<span className="text-xs text-kumo-error">{t("Failed to load agent panel", "助手面板加载失败")}</span>
 			</div>
 		);
 	}
@@ -35,7 +37,7 @@ function LazyAgentPanel() {
 		return (
 			<div className="flex flex-col items-center justify-center h-full gap-2">
 				<Loader size="base" />
-				<span className="text-xs text-kumo-subtle">Loading agent...</span>
+				<span className="text-xs text-kumo-subtle">{t("Loading agent...", "正在加载助手…")}</span>
 			</div>
 		);
 	}
@@ -43,6 +45,7 @@ function LazyAgentPanel() {
 }
 
 export default function AgentSidebar() {
+	const { t } = useI18n();
 	const { data: session } = useQuery({ queryKey: ["session"], queryFn: api.getSession });
 	const [activeTab, setActiveTab] = useState<"agent" | "mcp">("agent");
 
@@ -60,7 +63,7 @@ export default function AgentSidebar() {
 					}`}
 				>
 					<RobotIcon size={14} weight={activeTab === "agent" ? "fill" : "regular"} />
-					Agent
+					{t("Agent", "助手")}
 				</button>
 				{session?.role === "admin" && <button
 					type="button"

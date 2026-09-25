@@ -21,9 +21,17 @@ import {
 	Link as RouterLink,
 	Scripts,
 	ScrollRestoration,
+	useRouteLoaderData,
+	type LoaderFunctionArgs,
 } from "react-router";
 import { ApiError } from "~/services/api";
+import { I18nProvider, useI18n } from "~/hooks/useI18n";
+import { getRequestLocale } from "~/lib/i18n";
 import "./index.css";
+
+export function loader({ request }: LoaderFunctionArgs) {
+	return { locale: getRequestLocale(request.headers) };
+}
 
 function makeQueryClient() {
 	return new QueryClient({
@@ -76,8 +84,14 @@ const KumoLink = forwardRef<
 });
 
 export function Layout({ children }: { children: React.ReactNode }) {
+	const data = useRouteLoaderData<typeof loader>("root");
+	return <I18nProvider initialLocale={data?.locale ?? "en"}><Document>{children}</Document></I18nProvider>;
+}
+
+function Document({ children }: { children: React.ReactNode }) {
+	const { locale } = useI18n();
 	return (
-		<html lang="en">
+		<html lang={locale === "zh" ? "zh-CN" : "en"}>
 			<head>
 				<meta charSet="UTF-8" />
 				<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
@@ -127,18 +141,19 @@ export default function App() {
 }
 
 export function ErrorBoundary({ error }: { error: unknown }) {
-	let title = "Something went wrong";
-	let description = "An unexpected error occurred. Please try again.";
+	const { t } = useI18n();
+	let title = t("Something went wrong", "出现错误");
+	let description = t("An unexpected error occurred. Please try again.", "发生意外错误，请重试。");
 	let status: number | null = null;
 
 	if (isRouteErrorResponse(error)) {
 		status = error.status;
 		if (error.status === 404) {
-			title = "Page not found";
+			title = t("Page not found", "页面不存在");
 			description =
-				"The page you're looking for doesn't exist or has been moved.";
+				t("The page you're looking for doesn't exist or has been moved.", "您访问的页面不存在或已被移动。");
 		} else {
-			title = `Error ${error.status}`;
+			title = t(`Error ${error.status}`, `错误 ${error.status}`);
 			description = error.statusText || description;
 		}
 	} else if (error instanceof Error && import.meta.env.DEV) {
@@ -149,7 +164,7 @@ export function ErrorBoundary({ error }: { error: unknown }) {
 		<div className="flex items-center justify-center min-h-screen p-8">
 			<Empty
 				icon={<WarningIcon size={48} className="text-kumo-inactive" />}
-				title={status === 404 ? "404 — Page not found" : title}
+				title={status === 404 ? t("404 — Page not found", "404 — 页面不存在") : title}
 				description={description}
 				contents={
 					<Button
@@ -158,7 +173,7 @@ export function ErrorBoundary({ error }: { error: unknown }) {
 							window.location.href = "/";
 						}}
 					>
-						Go Home
+						{t("Go Home", "返回首页")}
 					</Button>
 				}
 			/>

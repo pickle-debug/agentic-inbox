@@ -24,6 +24,7 @@ import { useCreateFolder, useFolders } from "~/queries/folders";
 import { useMailbox } from "~/queries/mailboxes";
 import { useUIStore } from "~/hooks/useUIStore";
 import api from "~/services/api";
+import { useI18n } from "~/hooks/useI18n";
 
 const FOLDER_ICONS: Record<string, React.ReactNode> = {
 	[Folders.INBOX]: <TrayIcon size={18} weight="regular" />,
@@ -78,6 +79,7 @@ function FolderLink({
 }
 
 export default function Sidebar() {
+	const { t, message, folderName } = useI18n();
 	const { mailboxId } = useParams<{ mailboxId: string }>();
 	const navigate = useNavigate();
 	const { data: folders = [] } = useFolders(mailboxId);
@@ -96,7 +98,7 @@ export default function Sidebar() {
 			const result = await api.logout();
 			window.location.replace(result.redirect);
 		} catch (error) {
-			toastManager.add({ title: error instanceof Error ? error.message : "退出登录失败，请重试。", variant: "error" });
+			toastManager.add({ title: error instanceof Error ? message(error.message) : t("Failed to sign out. Please try again.", "退出登录失败，请重试。"), variant: "error" });
 			setIsLoggingOut(false);
 		}
 	};
@@ -122,7 +124,7 @@ export default function Sidebar() {
 	};
 
 	const displayName = useMemo(() => {
-		if (!currentMailbox) return mailboxId?.split("@")[0] || "Mailbox";
+		if (!currentMailbox) return mailboxId?.split("@")[0] || t("Mailbox", "邮箱");
 		// Prefer settings.fromName > name > local part of email
 		if (currentMailbox.settings?.fromName) {
 			return currentMailbox.settings.fromName;
@@ -131,7 +133,7 @@ export default function Sidebar() {
 			return currentMailbox.name;
 		}
 		return currentMailbox.email.split("@")[0] || currentMailbox.name;
-	}, [currentMailbox, mailboxId]);
+	}, [currentMailbox, mailboxId, t]);
 
 	const handleNavClick = () => {
 		// Close mobile sidebar on navigation
@@ -151,7 +153,7 @@ export default function Sidebar() {
 					className="flex items-center gap-1.5 text-kumo-subtle text-sm hover:text-kumo-default transition-colors mb-2.5 cursor-pointer bg-transparent border-0 p-0"
 				>
 					<CaretLeftIcon size={14} />
-					<span>Mailboxes</span>
+					<span>{t("Mailboxes", "邮箱")}</span>
 				</button>}
 				{/* Mailbox users skip the picker; keep logout reachable even when the session query fails. */}
 				{session?.role !== "admin" && <Button
@@ -162,7 +164,7 @@ export default function Sidebar() {
 					loading={isLoggingOut}
 					disabled={isLoggingOut}
 					onClick={handleLogout}
-				>退出登录</Button>}
+				>{t("Sign out", "退出登录")}</Button>}
 				<div className="px-1">
 					<div className="text-base font-semibold text-kumo-default truncate">
 						{displayName}
@@ -181,19 +183,19 @@ export default function Sidebar() {
 					onClick={() => startCompose()}
 					className="w-full"
 				>
-					Compose
+					{t("Compose", "写邮件")}
 				</Button>
 			</div>
 
 			{/* Navigation */}
 			<nav className="flex-1 overflow-y-auto px-2 space-y-0.5">
-				{session?.role === "admin" && <FolderLink to="/contacts" icon={<AddressBookIcon size={18} />} label="Contacts" onClick={handleNavClick} />}
+				{session?.role === "admin" && <FolderLink to="/contacts" icon={<AddressBookIcon size={18} />} label={t("Contacts", "联系人")} onClick={handleNavClick} />}
 				{SYSTEM_FOLDER_LINKS.map((folder) => (
 					<FolderLink
 						key={folder.id}
 						to={`/mailbox/${mailboxId}/emails/${folder.id}`}
 						icon={FOLDER_ICONS[folder.id]}
-						label={folder.label}
+						label={folderName(folder.id, folder.label)}
 						unreadCount={getUnreadCount(folder.id)}
 						onClick={handleNavClick}
 					/>
@@ -204,16 +206,16 @@ export default function Sidebar() {
 					<div className="pt-5">
 						<div className="flex items-center justify-between px-3 mb-1.5">
 							<span className="text-xs uppercase tracking-wider font-semibold text-kumo-subtle">
-								Folders
+								{t("Folders", "文件夹")}
 							</span>
-							<Tooltip content="New folder" asChild>
+							<Tooltip content={t("New folder", "新建文件夹")} asChild>
 								<Button
 									variant="ghost"
 									shape="square"
 									size="sm"
 									icon={<PlusIcon size={16} />}
 									onClick={() => setIsCreateFolderOpen(true)}
-									aria-label="Create new folder"
+									aria-label={t("Create new folder", "新建文件夹")}
 								/>
 							</Tooltip>
 						</div>
@@ -222,7 +224,7 @@ export default function Sidebar() {
 								key={folder.id}
 								to={`/mailbox/${mailboxId}/emails/${folder.id}`}
 								icon={<FolderIcon size={18} />}
-								label={folder.name}
+								label={folderName(folder.id, folder.name)}
 								unreadCount={folder.unreadCount}
 								onClick={handleNavClick}
 							/>
@@ -235,16 +237,16 @@ export default function Sidebar() {
 					<div className="pt-5">
 						<div className="flex items-center justify-between px-3 mb-1.5">
 							<span className="text-xs uppercase tracking-wider font-semibold text-kumo-subtle">
-								Folders
+									{t("Folders", "文件夹")}
 							</span>
-							<Tooltip content="New folder" asChild>
+							<Tooltip content={t("New folder", "新建文件夹")} asChild>
 								<Button
 									variant="ghost"
 									shape="square"
 									size="sm"
 									icon={<PlusIcon size={16} />}
 									onClick={() => setIsCreateFolderOpen(true)}
-									aria-label="Create new folder"
+									aria-label={t("Create new folder", "新建文件夹")}
 								/>
 							</Tooltip>
 						</div>
@@ -259,12 +261,12 @@ export default function Sidebar() {
 			>
 				<Dialog size="sm" className="p-6">
 					<Dialog.Title className="text-base font-semibold mb-4">
-						Create folder
+						{t("Create folder", "新建文件夹")}
 					</Dialog.Title>
 					<form onSubmit={handleCreateFolder} className="space-y-4">
 						<Input
-							label="Folder name"
-							placeholder="e.g. Projects"
+							label={t("Folder name", "文件夹名称")}
+							placeholder={t("e.g. Projects", "例如：项目")}
 							value={newFolderName}
 							onChange={(e) => setNewFolderName(e.target.value)}
 							required
@@ -273,7 +275,7 @@ export default function Sidebar() {
 							<Dialog.Close
 								render={(props) => (
 									<Button {...props} variant="secondary">
-										Cancel
+										{t("Cancel", "取消")}
 									</Button>
 								)}
 							/>
@@ -282,7 +284,7 @@ export default function Sidebar() {
 								variant="primary"
 								disabled={!newFolderName.trim()}
 							>
-								Create
+								{t("Create", "创建")}
 							</Button>
 						</div>
 					</form>

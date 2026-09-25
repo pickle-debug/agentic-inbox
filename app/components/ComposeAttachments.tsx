@@ -5,6 +5,7 @@
 import { Button } from "@cloudflare/kumo";
 import { FileIcon, PaperclipIcon, XIcon } from "@phosphor-icons/react";
 import { useRef } from "react";
+import { useI18n } from "~/hooks/useI18n";
 import type { ComposeAttachment } from "~/lib/compose-attachments";
 import { formatBytes } from "~/lib/utils";
 
@@ -23,6 +24,7 @@ export default function ComposeAttachments({
 	onAddFiles,
 	onRemove,
 }: ComposeAttachmentsProps) {
+	const { t } = useI18n();
 	const inputRef = useRef<HTMLInputElement>(null);
 
 	return (
@@ -54,10 +56,10 @@ export default function ComposeAttachments({
 					disabled={disabled}
 					onClick={() => inputRef.current?.click()}
 				>
-					Attach files
+					{t("Attach files", "添加附件")}
 				</Button>
 				<span className={`text-xs ${isDragging ? "text-kumo-link font-medium" : "text-kumo-subtle"}`}>
-					{isDragging ? "Drop files here" : "or drag and drop files anywhere in this message"}
+					{isDragging ? t("Drop files here", "将文件拖放到此处") : t("or drag and drop files anywhere in this message", "也可将文件拖放到正文区域任意位置")}
 				</span>
 			</div>
 
@@ -80,7 +82,7 @@ export default function ComposeAttachments({
 								className="shrink-0 rounded p-0.5 text-kumo-subtle hover:bg-kumo-fill hover:text-kumo-default disabled:opacity-50"
 								disabled={disabled}
 								onClick={() => onRemove(attachment.id)}
-								aria-label={`Remove ${attachment.filename}`}
+								aria-label={t(`Remove ${attachment.filename}`, `移除 ${attachment.filename}`)}
 							>
 								<XIcon size={13} />
 							</button>

@@ -24,12 +24,15 @@ import {
 	useMailboxes,
 } from "~/queries/mailboxes";
 import { queryKeys } from "~/queries/keys";
+import { useI18n } from "~/hooks/useI18n";
+import LanguageSelector from "~/components/LanguageSelector";
 
 export function meta() {
 	return [{ title: "Agentic Inbox" }];
 }
 
 export default function HomeRoute() {
+	const { t, message } = useI18n();
 	const toastManager = useKumoToastManager();
 	const { data: mailboxes = [], refetch: refetchMailboxes, isFetched: mailboxesFetched } = useMailboxes();
 	const createMailbox = useCreateMailbox();
@@ -103,7 +106,7 @@ export default function HomeRoute() {
 		e.preventDefault();
 		setCreateError(null);
 		if (!newPrefix || !selectedDomain) {
-			setCreateError("Please fill in all fields");
+			setCreateError(t("Please fill in all fields", "请填写所有必填项"));
 			return;
 		}
 		const email = `${newPrefix}@${selectedDomain}`;
@@ -111,13 +114,12 @@ export default function HomeRoute() {
 		setIsCreating(true);
 		try {
 			await createMailbox.mutateAsync({ email, name });
-			toastManager.add({ title: "Mailbox created successfully!" });
+			toastManager.add({ title: t("Mailbox created successfully!", "邮箱创建成功！") });
 			setIsCreateOpen(false);
 			setNewPrefix("");
 			setNewName("");
 		} catch (err: unknown) {
-			const message = (err instanceof Error ? err.message : null) || "Failed to create mailbox";
-			setCreateError(message);
+			setCreateError((err instanceof Error ? err.message : null) || t("Failed to create mailbox", "创建邮箱失败"));
 		} finally {
 			setIsCreating(false);
 		}
@@ -128,11 +130,11 @@ export default function HomeRoute() {
 		setIsDeleting(true);
 		try {
 			await deleteMailbox.mutateAsync(mailboxToDelete.id);
-			toastManager.add({ title: "Mailbox deleted" });
+			toastManager.add({ title: t("Mailbox deleted", "邮箱已删除") });
 			setIsDeleteOpen(false);
 			setMailboxToDelete(null);
 		} catch {
-			toastManager.add({ title: "Failed to delete mailbox", variant: "error" });
+			toastManager.add({ title: t("Failed to delete mailbox", "删除邮箱失败"), variant: "error" });
 		} finally {
 			setIsDeleting(false);
 		}
@@ -155,8 +157,8 @@ export default function HomeRoute() {
 	}
 	if (sessionError) {
 		return <div className="min-h-screen flex flex-col items-center justify-center gap-4">
-			<Text variant="error">无法读取登录状态，请重试。</Text>
-			<Button onClick={() => refetchSession()}>重试</Button>
+			<Text variant="error">{t("Unable to load login status. Please try again.", "无法读取登录状态，请重试。")}</Text>
+			<Button onClick={() => refetchSession()}>{t("Retry", "重试")}</Button>
 		</div>;
 	}
 	if (!session) {
@@ -167,22 +169,25 @@ export default function HomeRoute() {
 		<div className="min-h-screen bg-kumo-recessed">
 			<div className="mx-auto max-w-2xl px-4 py-8 md:px-6 md:py-16">
 				<div className="mb-8">
-					<div className="flex items-center justify-between">
+					<div className="flex flex-wrap items-center justify-between gap-4">
 						<div>
-							<h1 className="text-2xl font-bold text-kumo-default">邮箱</h1>
-							{session && <p className="mt-1 text-sm text-kumo-subtle">{session.email} · {isAdmin ? "管理员" : "邮箱账号"}</p>}
+							<h1 className="text-2xl font-bold text-kumo-default">{t("Mailboxes", "邮箱")}</h1>
+							{session && <p className="mt-1 break-all text-sm text-kumo-subtle">{session.email} · {isAdmin ? t("Administrator", "管理员") : t("Mailbox account", "邮箱账号")}</p>}
 						</div>
-						<div className="flex items-center gap-2">
+						<div className="flex flex-wrap items-center justify-end gap-2">
+						<LanguageSelector compact />
 						{isAdmin && !isConfigured && (
 							<Button
 								variant="primary"
+								size="base"
+								className="w-32 justify-center text-sm"
 								icon={<PlusIcon size={16} />}
 								onClick={() => setIsCreateOpen(true)}
 							>
-								新建邮箱
+								{t("New mailbox", "新建邮箱")}
 							</Button>
 						)}
-						{session && <Button variant="secondary" size="sm" onClick={async () => { const result = await api.logout(); window.location.href = result.redirect; }}>退出登录</Button>}
+						{session && <Button variant="secondary" size="base" className="w-32 justify-center text-sm" onClick={async () => { const result = await api.logout(); window.location.href = result.redirect; }}>{t("Sign out", "退出登录")}</Button>}
 						</div>
 					</div>
 					{domains.length > 0 && (
@@ -223,7 +228,7 @@ export default function HomeRoute() {
 										size="sm"
 										shape="square"
 										icon={<TrashIcon size={16} />}
-										aria-label={`Delete mailbox ${account.email}`}
+										aria-label={t(`Delete mailbox ${account.email}`, `删除邮箱 ${account.email}`)}
 										onClick={(e) => {
 											e.preventDefault();
 											e.stopPropagation();
@@ -245,7 +250,7 @@ export default function HomeRoute() {
 											setMailboxForPassword({ id: account.id, email: account.email });
 										}}
 									>
-										密码登录
+										{t("Password login", "密码登录")}
 									</Button>
 								)}
 							</RouterLink>
@@ -262,12 +267,12 @@ export default function HomeRoute() {
 								/>
 							</div>
 							<h3 className="text-base font-semibold text-kumo-default mb-1.5">
-								No mailboxes yet
+								{t("No mailboxes yet", "暂无邮箱")}
 							</h3>
 							<p className="text-sm text-kumo-subtle max-w-sm mb-5">
 								{isConfigured
-									? "Your email routing is configured but no mailboxes have been created yet. They will appear here automatically."
-									: "Create a mailbox to start sending and receiving emails with your domain."}
+									? t("Your email routing is configured but no mailboxes have been created yet. They will appear here automatically.", "邮件路由已配置，尚未创建的邮箱将自动显示在此处。")
+									: t("Create a mailbox to start sending and receiving emails with your domain.", "创建邮箱，即可使用你的域名收发邮件。")}
 							</p>
 							{isAdmin && !isConfigured && (
 								<Button
@@ -275,7 +280,7 @@ export default function HomeRoute() {
 									icon={<PlusIcon size={16} />}
 									onClick={() => setIsCreateOpen(true)}
 								>
-									Create Mailbox
+									{t("Create Mailbox", "创建邮箱")}
 								</Button>
 							)}
 						</div>
@@ -287,22 +292,22 @@ export default function HomeRoute() {
 			<Dialog.Root open={isCreateOpen} onOpenChange={setIsCreateOpen}>
 				<Dialog size="sm" className="p-6">
 					<Dialog.Title className="text-base font-semibold mb-5">
-						Create New Mailbox
+						{t("Create New Mailbox", "创建新邮箱")}
 					</Dialog.Title>
 					<form onSubmit={handleCreate} className="space-y-4">
 						{createError && (
 							<Text variant="error" size="sm">
-								{createError}
+								{message(createError)}
 							</Text>
 						)}
 						<div>
 							<span className="text-sm font-medium text-kumo-default mb-1.5 block">
-								Email Address
+								{t("Email Address", "邮箱地址")}
 							</span>
 							<div className="flex items-center gap-2">
 								<div className="flex-1">
 									<Input
-										aria-label="Address prefix"
+										aria-label={t("Address prefix", "邮箱前缀")}
 										placeholder="info"
 										size="sm"
 										value={newPrefix}
@@ -314,7 +319,7 @@ export default function HomeRoute() {
 								{domains.length > 1 ? (
 									<div className="flex-1">
 							<Select
-								aria-label="Domain"
+								aria-label={t("Domain", "域名")}
 								value={selectedDomain}
 								onValueChange={(value) => {
 									if (value) setSelectedDomain(value);
@@ -329,14 +334,14 @@ export default function HomeRoute() {
 									</div>
 								) : (
 									<span className="text-sm text-kumo-subtle">
-										{selectedDomain || "no domain"}
+										{selectedDomain || t("no domain", "暂无域名")}
 									</span>
 								)}
 							</div>
 						</div>
 						<Input
-							label="Display Name (optional)"
-							placeholder="Info"
+							label={t("Display Name (optional)", "显示名称（选填）")}
+							placeholder={t("Info", "信息咨询")}
 							size="sm"
 							value={newName}
 							onChange={(e) => setNewName(e.target.value)}
@@ -345,7 +350,7 @@ export default function HomeRoute() {
 							<Dialog.Close
 								render={(props) => (
 									<Button {...props} variant="secondary" size="sm">
-										Cancel
+										{t("Cancel", "取消")}
 									</Button>
 								)}
 							/>
@@ -356,7 +361,7 @@ export default function HomeRoute() {
 								loading={isCreating}
 								disabled={!selectedDomain}
 							>
-								Create
+								{t("Create", "创建")}
 							</Button>
 						</div>
 					</form>
@@ -373,20 +378,20 @@ export default function HomeRoute() {
 			>
 				<Dialog size="sm" className="p-6">
 					<Dialog.Title className="text-base font-semibold mb-2">
-						Delete Mailbox
+						{t("Delete Mailbox", "删除邮箱")}
 					</Dialog.Title>
 					<Dialog.Description className="text-kumo-subtle text-sm mb-5">
-						Are you sure you want to delete{" "}
+						{t("Are you sure you want to delete ", "确认删除 ")}
 						<strong className="text-kumo-default">
 							{mailboxToDelete?.email}
 						</strong>
-						? This action cannot be undone.
+						{t("? This action cannot be undone.", "？此操作无法撤销。")}
 					</Dialog.Description>
 					<div className="flex justify-end gap-2">
 						<Dialog.Close
 							render={(props) => (
 								<Button {...props} variant="secondary" size="sm">
-									Cancel
+									{t("Cancel", "取消")}
 								</Button>
 							)}
 						/>
@@ -396,7 +401,7 @@ export default function HomeRoute() {
 							loading={isDeleting}
 							onClick={handleDelete}
 						>
-							Delete
+							{t("Delete", "删除")}
 						</Button>
 					</div>
 				</Dialog>

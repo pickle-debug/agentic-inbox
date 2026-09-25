@@ -2,7 +2,7 @@
 // Licensed under the Apache 2.0 license found in the LICENSE file or at:
 //     https://opensource.org/licenses/Apache-2.0
 
-import { Button, Pagination, Tooltip } from "@cloudflare/kumo";
+import { Banner, Button, Tooltip } from "@cloudflare/kumo";
 import {
 	ArchiveIcon,
 	ArrowBendUpLeftIcon,
@@ -33,10 +33,11 @@ import { useFolders } from "~/queries/folders";
 import { queryKeys } from "~/queries/keys";
 import { useUIStore } from "~/hooks/useUIStore";
 import type { Email } from "~/types";
+import { useI18n } from "~/hooks/useI18n";
 
 const PAGE_SIZE = 25;
 
-const FOLDER_EMPTY_STATES: Record<
+function getFolderEmptyStates(t: (english: string, chinese: string) => string): Record<
 	string,
 	{
 		icon: React.ReactNode;
@@ -44,45 +45,46 @@ const FOLDER_EMPTY_STATES: Record<
 		description: string;
 		showCompose?: boolean;
 	}
-> = {
+> { return {
 	[Folders.INBOX]: {
 		icon: <TrayIcon size={48} weight="thin" className="text-kumo-subtle" />,
-		title: "Your inbox is empty",
+		title: t("Your inbox is empty", "收件箱为空"),
 		description:
-			"New emails will appear here when they arrive. Send an email to get the conversation started.",
+			t("New emails will appear here when they arrive. Send an email to get the conversation started.", "收到的新邮件会显示在这里。发送一封邮件，开启对话吧。"),
 		showCompose: true,
 	},
 	[Folders.SENT]: {
 		icon: (
 			<PaperPlaneTiltIcon size={48} weight="thin" className="text-kumo-subtle" />
 		),
-		title: "No sent emails",
-		description: "Emails you send will show up here.",
+		title: t("No sent emails", "暂无已发送邮件"),
+		description: t("Emails you send will show up here.", "您发送的邮件会显示在这里。"),
 		showCompose: true,
 	},
 	[Folders.DRAFT]: {
 		icon: <FileIcon size={48} weight="thin" className="text-kumo-subtle" />,
-		title: "No drafts",
-		description: "Emails you're still working on will be saved here.",
+		title: t("No drafts", "暂无草稿"),
+		description: t("Emails you're still working on will be saved here.", "尚未写完的邮件会保存在这里。"),
 		showCompose: true,
 	},
 	[Folders.ARCHIVE]: {
 		icon: <ArchiveIcon size={48} weight="thin" className="text-kumo-subtle" />,
-		title: "Archive is empty",
+		title: t("Archive is empty", "归档为空"),
 		description:
-			"Move emails here to keep your inbox clean without deleting them.",
+			t("Move emails here to keep your inbox clean without deleting them.", "将邮件移到这里，保留邮件并整理收件箱。"),
 	},
 	[Folders.TRASH]: {
 		icon: <TrashIcon size={48} weight="thin" className="text-kumo-subtle" />,
-		title: "Trash is empty",
+		title: t("Trash is empty", "回收站为空"),
 		description:
-			"Deleted emails will appear here. You can restore them or permanently delete them.",
+			t("Deleted emails will appear here. You can restore them or permanently delete them.", "删除的邮件会显示在这里，您可以恢复或永久删除。"),
 	},
-};
+}; }
 
 function EmailListSkeleton() {
+	const { t } = useI18n();
 	return (
-		<div className="animate-pulse space-y-1 p-2">
+		<div className="animate-pulse space-y-1 p-2" role="status" aria-label={t("Loading emails…", "正在加载邮件…")}>
 			{Array.from({ length: 8 }).map((_, i) => (
 				<div key={i} className="flex items-center gap-3 px-3 py-3">
 					<div className="w-4 h-4 rounded bg-kumo-fill" />
@@ -109,12 +111,13 @@ function FolderEmptyState({
 	folder?: string;
 	onCompose: () => void;
 }) {
-	const config = (folder && FOLDER_EMPTY_STATES[folder]) || {
+	const { t } = useI18n();
+	const config = (folder && getFolderEmptyStates(t)[folder]) || {
 		icon: (
 			<EnvelopeSimpleIcon size={48} weight="thin" className="text-kumo-subtle" />
 		),
-		title: "No emails",
-		description: "This folder is empty.",
+		title: t("No emails", "暂无邮件"),
+		description: t("This folder is empty.", "此文件夹为空。"),
 	};
 
 	return (
@@ -133,7 +136,7 @@ function FolderEmptyState({
 					icon={<PencilSimpleIcon size={16} />}
 					onClick={onCompose}
 				>
-					Compose
+					{t("Compose", "写邮件")}
 				</Button>
 			)}
 		</div>
@@ -141,6 +144,7 @@ function FolderEmptyState({
 }
 
 export default function EmailListRoute() {
+	const { t, dateLocale, folderName: localizeFolderName } = useI18n();
 	const { mailboxId, folder } = useParams<{
 		mailboxId: string;
 		folder: string;
@@ -153,6 +157,8 @@ export default function EmailListRoute() {
 		startCompose,
 	} = useUIStore();
 	const [page, setPage] = useState(1);
+	const [editingPage, setEditingPage] = useState("1");
+	useEffect(() => setEditingPage(String(page)), [page, mailboxId, folder]);
 
 	const queryClient = useQueryClient();
 	const updateEmail = useUpdateEmail();
@@ -171,18 +177,20 @@ export default function EmailListRoute() {
 	const {
 		data: emailData,
 		isFetching: isRefreshing,
+		isError,
+		refetch,
 	} = useEmails(mailboxId, params, { refetchInterval: 30_000 });
 
 	const emails = emailData?.emails ?? [];
 	const totalCount = emailData?.totalCount ?? 0;
+	const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
 
 	const { data: folders = [] } = useFolders(mailboxId);
 
 	const folderName = useMemo(() => {
 		const found = folders.find((f) => f.id === folder);
-		if (found) return found.name;
-		return folder ? folder.charAt(0).toUpperCase() + folder.slice(1) : "Inbox";
-	}, [folders, folder]);
+		return localizeFolderName(folder || Folders.INBOX, found?.name);
+	}, [folders, folder, localizeFolderName]);
 
 	const isPanelOpen = selectedEmailId !== null || isComposing;
 
@@ -214,7 +222,7 @@ export default function EmailListRoute() {
 		e.preventDefault();
 		e.stopPropagation();
 		if (mailboxId) {
-			const confirmed = window.confirm("Are you sure you want to delete this email?");
+			const confirmed = window.confirm(t("Are you sure you want to delete this email?", "确定要删除这封邮件吗？"));
 			if (!confirmed) return;
 			deleteEmail.mutate({ mailboxId, id: emailId });
 			if (selectedEmailId === emailId) closePanel();
@@ -281,11 +289,11 @@ export default function EmailListRoute() {
 					<div className="flex items-center gap-1">
 						{totalCount > 0 && (
 							<span className="text-sm text-kumo-subtle mr-2 hidden sm:inline">
-								{totalCount} conversation{totalCount !== 1 ? "s" : ""}
+								{t(`${totalCount} conversation${totalCount !== 1 ? "s" : ""}`, `${totalCount} 个会话`)}
 							</span>
 						)}
 						<Tooltip
-							content={isRefreshing ? "Refreshing..." : "Refresh"}
+							content={isRefreshing ? t("Refreshing...", "正在刷新…") : t("Refresh", "刷新")}
 							side="bottom"
 							asChild
 						>
@@ -301,7 +309,7 @@ export default function EmailListRoute() {
 								}
 								onClick={handleRefresh}
 								disabled={isRefreshing}
-								aria-label="Refresh"
+								aria-label={t("Refresh", "刷新")}
 							/>
 						</Tooltip>
 					</div>
@@ -309,7 +317,12 @@ export default function EmailListRoute() {
 
 				{/* Email rows */}
 				<div className="flex-1 overflow-y-auto">
-				{isRefreshing && emails.length === 0 ? (
+				{isError ? (
+					<div className="p-4 space-y-3">
+						<Banner variant="error" text={t("Unable to load emails.", "邮件加载失败。")} />
+						<Button size="sm" variant="secondary" onClick={() => void refetch()}>{t("Retry", "重试")}</Button>
+					</div>
+				) : isRefreshing && emails.length === 0 ? (
 					<EmailListSkeleton />
 				) : emails.length > 0 ? (
 						<div>
@@ -343,6 +356,7 @@ export default function EmailListRoute() {
 										<button
 											type="button"
 											className="shrink-0 p-0.5 bg-transparent border-0 cursor-pointer"
+											aria-label={email.starred ? t("Unstar", "取消星标") : t("Star", "添加星标")}
 											onClick={(e) => {
 												e.stopPropagation();
 												toggleStar(e, email);
@@ -374,18 +388,18 @@ export default function EmailListRoute() {
 												)}
 												{email.has_draft && (
 													<span className="shrink-0 text-xs text-kumo-destructive font-medium">
-														Draft
+														{t("Draft", "草稿")}
 													</span>
 												)}
 												{email.needs_reply && !email.has_draft && (
-													<Tooltip content="Needs reply" asChild>
+													<Tooltip content={t("Needs reply", "待回复")} asChild>
 														<span className="shrink-0 text-kumo-warning">
 															<ArrowBendUpLeftIcon size={14} weight="bold" />
 														</span>
 													</Tooltip>
 												)}
 												<span className="text-sm text-kumo-subtle shrink-0 ml-auto">
-													{formatListDate(email.date)}
+													{formatListDate(email.date, dateLocale)}
 												</span>
 											</div>
 											<div className="truncate text-sm mt-0.5">
@@ -404,7 +418,7 @@ export default function EmailListRoute() {
 
 										{/* Hover actions */}
 										<div className="hidden group-hover:flex items-center shrink-0">
-											<Tooltip content={email.read ? "Mark unread" : "Mark read"} asChild>
+											<Tooltip content={email.read ? t("Mark unread", "标为未读") : t("Mark read", "标为已读")} asChild>
 												<Button
 													variant="ghost"
 													shape="square"
@@ -419,17 +433,17 @@ export default function EmailListRoute() {
 																data: { read: !email.read },
 															});
 													}}
-													aria-label={email.read ? "Mark unread" : "Mark read"}
+													aria-label={email.read ? t("Mark unread", "标为未读") : t("Mark read", "标为已读")}
 												/>
 											</Tooltip>
-											<Tooltip content="Delete" asChild>
+											<Tooltip content={t("Delete", "删除")} asChild>
 												<Button
 													variant="ghost"
 													shape="square"
 													size="sm"
 													icon={<TrashIcon size={14} />}
 													onClick={(e) => handleDelete(e, email.id)}
-													aria-label="Delete"
+													aria-label={t("Delete", "删除")}
 												/>
 											</Tooltip>
 										</div>
@@ -447,14 +461,29 @@ export default function EmailListRoute() {
 
 				{/* Pagination */}
 				{totalCount > PAGE_SIZE && (
-					<div className="flex justify-center py-3 border-t border-kumo-line shrink-0">
-						<Pagination
-							page={page}
-							setPage={setPage}
-							perPage={PAGE_SIZE}
-							totalCount={totalCount}
-						/>
-					</div>
+					<nav aria-label={t("Pagination", "分页")} className="flex flex-wrap items-center justify-center gap-2 py-3 border-t border-kumo-line shrink-0">
+						<Button size="sm" variant="ghost" disabled={page <= 1 || isRefreshing} onClick={() => setPage(1)}>{t("First", "首页")}</Button>
+						<Button size="sm" variant="ghost" disabled={page <= 1 || isRefreshing} onClick={() => setPage(page - 1)}>{t("Previous", "上一页")}</Button>
+						<label className="flex items-center gap-1 text-sm text-kumo-subtle">
+							{t("Page", "页码")}
+							<input type="number" min={1} max={totalPages} value={editingPage} disabled={isRefreshing}
+								onChange={(event) => setEditingPage(event.target.value)}
+								onBlur={(event) => {
+									const value = event.target.valueAsNumber;
+									const next = Number.isFinite(value) ? Math.min(totalPages, Math.max(1, Math.trunc(value))) : page;
+									setEditingPage(String(next));
+									setPage(next);
+								}}
+								onKeyDown={(event) => {
+									if (event.key === "Enter") { event.preventDefault(); event.currentTarget.blur(); }
+									if (event.key === "Escape") { event.preventDefault(); setEditingPage(String(page)); }
+								}}
+								className="w-14 rounded border border-kumo-line bg-kumo-base px-1 py-1 text-center text-kumo-default" />
+							{t(`of ${totalPages}`, `/ ${totalPages}`)}
+						</label>
+						<Button size="sm" variant="ghost" disabled={page >= totalPages || isRefreshing} onClick={() => setPage(page + 1)}>{t("Next", "下一页")}</Button>
+						<Button size="sm" variant="ghost" disabled={page >= totalPages || isRefreshing} onClick={() => setPage(totalPages)}>{t("Last", "末页")}</Button>
+					</nav>
 				)}
 		</MailboxSplitView>
 	);

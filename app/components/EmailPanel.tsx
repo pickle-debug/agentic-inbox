@@ -2,7 +2,8 @@
 // Licensed under the Apache 2.0 license found in the LICENSE file or at:
 //     https://opensource.org/licenses/Apache-2.0
 
-import { useKumoToastManager } from "@cloudflare/kumo";
+import { useI18n } from "~/hooks/useI18n";
+import { Banner, Button, useKumoToastManager } from "@cloudflare/kumo";
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router";
 import { Folders } from "shared/folders";
@@ -24,8 +25,9 @@ import { useUIStore } from "~/hooks/useUIStore";
 import type { Email, Folder, Mailbox } from "~/types";
 
 function EmailPanelSkeleton() {
+	const { t } = useI18n();
 	return (
-		<div className="animate-pulse p-5 space-y-4">
+		<div className="animate-pulse p-5 space-y-4" role="status" aria-label={t("Loading email…", "正在加载邮件…")}>
 			<div className="h-5 w-2/3 rounded bg-kumo-fill" />
 			<div className="flex items-center gap-3"><div className="w-10 h-10 rounded-full bg-kumo-fill" /><div className="space-y-2 flex-1"><div className="h-3 w-40 rounded bg-kumo-fill" /><div className="h-2.5 w-24 rounded bg-kumo-fill" /></div></div>
 			<div className="space-y-2 pt-4"><div className="h-2.5 w-full rounded bg-kumo-fill" /><div className="h-2.5 w-5/6 rounded bg-kumo-fill" /><div className="h-2.5 w-4/6 rounded bg-kumo-fill" /><div className="h-2.5 w-3/4 rounded bg-kumo-fill" /></div>
@@ -34,8 +36,9 @@ function EmailPanelSkeleton() {
 }
 
 export default function EmailPanel({ emailId }: { emailId: string }) {
+	const { t, message: localizeMessage } = useI18n();
 	const { mailboxId, folder } = useParams<{ mailboxId: string; folder: string }>();
-	const { data: email } = useEmail(mailboxId, emailId) as { data?: Email };
+	const { data: email, isError, refetch } = useEmail(mailboxId, emailId);
 	const { data: threadRepliesRaw } = useThreadReplies(mailboxId, email?.thread_id) as {
 		data?: Email[];
 	};
@@ -89,11 +92,16 @@ export default function EmailPanel({ emailId }: { emailId: string }) {
 
 	const moveToFolders = useMemo(() => { const cur = folder || email?.folder_id; return folders.filter((f) => f.id !== cur); }, [folders, folder, email?.folder_id]);
 
+	if (isError) return <div className="p-4 space-y-3">
+		<Banner variant="error" text={t("Unable to load this email.", "此邮件加载失败。")} />
+		<Button size="sm" variant="secondary" onClick={() => void refetch()}>{t("Retry", "重试")}</Button>
+		<Button size="sm" variant="ghost" onClick={closePanel}>{t("Back to list", "返回列表")}</Button>
+	</div>;
 	if (!email) return <EmailPanelSkeleton />;
 
 	const toggleStar = () => { if (mailboxId) updateEmail.mutate({ mailboxId, id: email.id, data: { starred: !email.starred } }); };
 	const handleMove = (folderId: string) => { if (mailboxId) { moveEmailMut.mutate({ mailboxId, id: email.id, folderId }); closePanel(); } };
-	const handleDelete = () => { if (mailboxId) { if (!window.confirm("Are you sure you want to delete this email?")) return; deleteEmailMut.mutate({ mailboxId, id: email.id }); closePanel(); } };
+	const handleDelete = () => { if (mailboxId) { if (!window.confirm(t("Are you sure you want to delete this email?", "确定要删除这封邮件吗？"))) return; deleteEmailMut.mutate({ mailboxId, id: email.id }); closePanel(); } };
 
 	const handleEditDraft = (draftMsg?: Email) => {
 		const target = draftMsg || email;
@@ -104,9 +112,9 @@ export default function EmailPanel({ emailId }: { emailId: string }) {
 	const handleDeleteDraft = async (draftMsg?: Email) => {
 		const target = draftMsg || email;
 		if (!mailboxId) return;
-		if (!window.confirm("Discard this draft?")) return;
+		if (!window.confirm(t("Discard this draft?", "确定要放弃这封草稿吗？"))) return;
 		deleteEmailMut.mutate({ mailboxId, id: target.id });
-		toastManager.add({ title: "Draft discarded" });
+		toastManager.add({ title: t("Draft discarded", "草稿已放弃") });
 		if (target.id === emailId) closePanel();
 	};
 
@@ -116,9 +124,9 @@ export default function EmailPanel({ emailId }: { emailId: string }) {
 		setIsSending(true);
 		try {
 			if (!target.recipient || !target.subject) { try { const fresh = await api.getEmail(mailboxId, target.id) as Email; if (fresh) target = fresh; } catch {} }
-			if (!target.recipient) { toastManager.add({ title: "Cannot send: no recipient set on this draft.", variant: "error" }); return; }
+			if (!target.recipient) { toastManager.add({ title: t("Cannot send: no recipient set on this draft.", "无法发送：草稿未填写收件人。"), variant: "error" }); return; }
 			const toRecipients = splitEmailList(target.recipient);
-			if (toRecipients.length === 0) { toastManager.add({ title: "Cannot send: no valid recipient set on this draft.", variant: "error" }); return; }
+			if (toRecipients.length === 0) { toastManager.add({ title: t("Cannot send: no valid recipient set on this draft.", "无法发送：草稿没有有效的收件人。"), variant: "error" }); return; }
 			const fromName = currentMailbox.settings?.fromName || currentMailbox.name;
 			const from = fromName && fromName !== currentMailbox.email ? { email: currentMailbox.email, name: fromName } : currentMailbox.email;
 			const originalEmail = target.in_reply_to ? allMessages.find((msg) => msg.id === target.in_reply_to) : undefined;
@@ -127,6 +135,7 @@ export default function EmailPanel({ emailId }: { emailId: string }) {
 					.filter((attachment) => attachment.disposition !== "inline")
 					.map((attachment) => composeAttachmentFromStored(target.id, attachment)),
 				(emailId, attachmentId) => api.getAttachment(mailboxId, emailId, attachmentId),
+				t,
 			);
 			const emailData = {
 				to: toEmailListValue(toRecipients),
@@ -140,10 +149,10 @@ export default function EmailPanel({ emailId }: { emailId: string }) {
 			};
 			if (originalEmail) await replyMut.mutateAsync({ mailboxId, emailId: originalEmail.id, email: emailData }); else await sendEmailMut.mutateAsync({ mailboxId, email: emailData });
 			await deleteEmailMut.mutateAsync({ mailboxId, id: target.id });
-			toastManager.add({ title: "Email sent!" });
+			toastManager.add({ title: t("Email sent!", "邮件已发送！") });
 			if (isDraftFolder) closePanel();
 		} catch (err) {
-			const message = (err instanceof Error ? err.message : null) || "Failed to send email.";
+			const message = (err instanceof Error ? localizeMessage(err.message) : null) || t("Failed to send email.", "邮件发送失败。");
 			toastManager.add({ title: message, variant: "error" });
 		} finally { setIsSending(false); }
 	};

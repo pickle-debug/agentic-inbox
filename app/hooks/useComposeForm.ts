@@ -2,6 +2,7 @@
 // Licensed under the Apache 2.0 license found in the LICENSE file or at:
 //     https://opensource.org/licenses/Apache-2.0
 
+import { useI18n } from "~/hooks/useI18n";
 import { useKumoToastManager } from "@cloudflare/kumo";
 import { type DragEvent, type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -173,6 +174,7 @@ function buildInitialComposeFields(
 }
 
 export function useComposeForm(mailboxId?: string, _folder?: string) {
+	const { t, message: localizeMessage } = useI18n();
 	const toastManager = useKumoToastManager();
 	const { composeOptions, closePanel, closeCompose } = useUIStore();
 	const { data: currentMailbox } = useMailbox(mailboxId);
@@ -197,11 +199,17 @@ export function useComposeForm(mailboxId?: string, _folder?: string) {
 	const lastInitializedOptionsRef = useRef<typeof composeOptions | null>(null);
 	const dragDepthRef = useRef(0);
 	const isDraftEdit = !!composeOptions.draftEmail;
+	const localizeComposeError = (value: string) => {
+		const attachmentPrefix = "Failed to read attachment: ";
+		return value.startsWith(attachmentPrefix)
+			? t(value, `附件读取失败：${value.slice(attachmentPrefix.length)}`)
+			: localizeMessage(value);
+	};
 
 	const formTitle = useMemo(() => {
-		if (isDraftEdit) return "Edit Draft";
-		switch (composeOptions.mode) { case "reply": return "Reply"; case "reply-all": return "Reply All"; case "forward": return "Forward"; default: return "New Message"; }
-	}, [composeOptions.mode, isDraftEdit]);
+		if (isDraftEdit) return t("Edit Draft", "编辑草稿");
+		switch (composeOptions.mode) { case "reply": return t("Reply", "回复"); case "reply-all": return t("Reply All", "回复全部"); case "forward": return t("Forward", "转发"); default: return t("New Message", "新邮件"); }
+	}, [composeOptions.mode, isDraftEdit, t]);
 
 	const sigBlock = useMemo(() => getSignatureBlock(currentMailbox?.settings), [currentMailbox]);
 
@@ -315,12 +323,12 @@ export function useComposeForm(mailboxId?: string, _folder?: string) {
 			} });
 			setActiveDraftId(savedDraft.id);
 			setAttachments((current) => materializeComposeAttachments(current, outgoingAttachments));
-			toastManager.add({ title: "Draft saved!" });
+			toastManager.add({ title: t("Draft saved!", "草稿已保存！") });
 		}
 		catch (err: unknown) {
 			const message = (err instanceof Error ? err.message : null) || "Failed to save draft.";
 			setError(message);
-			toastManager.add({ title: message, variant: "error" });
+			toastManager.add({ title: localizeComposeError(message), variant: "error" });
 		}
 		finally { setIsSavingDraft(false); }
 	};
@@ -333,14 +341,14 @@ export function useComposeForm(mailboxId?: string, _folder?: string) {
 		const ccRecipients = splitEmailList(cc); const bccRecipients = splitEmailList(bcc);
 		const fromName = currentMailbox.settings?.fromName || currentMailbox.name;
 		const from = fromName && fromName !== currentMailbox.email ? { email: currentMailbox.email, name: fromName } : currentMailbox.email;
-		setIsSending(true); toastManager.add({ title: "Sending email..." });
+		setIsSending(true); toastManager.add({ title: t("Sending email...", "正在发送邮件…") });
 		let outgoingAttachments;
 		try {
 			outgoingAttachments = await getOutgoingAttachments();
 		} catch (err: unknown) {
 			const message = (err instanceof Error ? err.message : null) || "Failed to read attachments.";
 			setError(message);
-			toastManager.add({ title: message, variant: "error" });
+			toastManager.add({ title: localizeComposeError(message), variant: "error" });
 			setIsSending(false);
 			return;
 		}
@@ -360,16 +368,16 @@ export function useComposeForm(mailboxId?: string, _folder?: string) {
 			else if (mode === "forward" && originalId) await forwardMutation.mutateAsync({ mailboxId, emailId: originalId, email: emailData });
 			else await sendEmailMutation.mutateAsync({ mailboxId, email: emailData });
 			if (draftId) deleteEmailMutation.mutate({ mailboxId, id: draftId });
-			toastManager.add({ title: "Email sent!" });
+			toastManager.add({ title: t("Email sent!", "邮件已发送！") });
 			onClose();
-		} catch (err: unknown) { const message = (err instanceof Error ? err.message : null) || "Failed to send email."; setError(message); toastManager.add({ title: message, variant: "error" }); }
+		} catch (err: unknown) { const message = (err instanceof Error ? err.message : null) || "Failed to send email."; setError(message); toastManager.add({ title: localizeComposeError(message), variant: "error" }); }
 		finally { setIsSending(false); }
 	};
 
 	return {
 		to, setTo, cc, setCc, bcc, setBcc, showCcBcc, setShowCcBcc,
 		subject, setSubject, body, setBody, attachments, isDraggingAttachments,
-		error, setError, isSavingDraft, isSending, formTitle, handleSaveDraft,
+		error: error ? localizeComposeError(error) : null, setError, isSavingDraft, isSending, formTitle, handleSaveDraft,
 		handleSend, addAttachments, removeAttachment, handleAttachmentDragEnter,
 		handleAttachmentDragOver, handleAttachmentDragLeave, handleAttachmentDrop,
 		closeCompose, closePanel,

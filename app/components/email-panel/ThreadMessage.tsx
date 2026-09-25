@@ -2,6 +2,7 @@
 // Licensed under the Apache 2.0 license found in the LICENSE file or at:
 //     https://opensource.org/licenses/Apache-2.0
 
+import { useI18n } from "~/hooks/useI18n";
 import { Badge, Button, Tooltip } from "@cloudflare/kumo";
 import {
 	CaretDownIcon,
@@ -68,9 +69,10 @@ export default function ThreadMessage({
 	onViewSource,
 	onPreviewImage,
 }: ThreadMessageProps) {
+	const { t, dateLocale } = useI18n();
 	const isSelf = email.sender === mailboxEmail;
 	const containerClassName = `${!isLast ? "border-b border-kumo-line" : ""} ${isDraft ? "border-l-2 border-l-kumo-warning bg-kumo-warning/[0.02]" : ""}`;
-	const senderLabel = isDraft ? "Draft reply" : isSelf ? "You" : email.sender;
+	const senderLabel = isDraft ? t("Draft reply", "回复草稿") : isSelf ? t("You", "我") : email.sender;
 
 	if (!isExpanded) {
 		return (
@@ -87,7 +89,7 @@ export default function ThreadMessage({
 								{senderLabel}
 							</span>
 							<span className="text-xs text-kumo-subtle shrink-0">
-								{formatDetailDate(email.date)}
+								{formatDetailDate(email.date, dateLocale)}
 							</span>
 						</div>
 						<p className="text-xs text-kumo-subtle truncate">
@@ -109,7 +111,7 @@ export default function ThreadMessage({
 							type="button"
 							onClick={onToggleExpand}
 							className="shrink-0"
-							aria-label="Collapse message"
+							aria-label={t("Collapse message", "收起邮件")}
 						>
 							<div className="cursor-pointer hover:ring-2 hover:ring-kumo-brand/30 transition-shadow rounded-full">
 								<Avatar isDraft={isDraft} isSelf={isSelf} sender={email.sender} />
@@ -120,24 +122,24 @@ export default function ThreadMessage({
 								<span className="text-sm font-medium text-kumo-default truncate">
 									{senderLabel}
 								</span>
-								{isDraft && <Badge variant="outline">Draft</Badge>}
+								{isDraft && <Badge variant="outline">{t("Draft", "草稿")}</Badge>}
 							</div>
-							<div className="text-xs text-kumo-subtle">To: {email.recipient}</div>
+							<div className="text-xs text-kumo-subtle">{t("To: ", "收件人：")}{email.recipient}</div>
 						</div>
 					</div>
 					<div className="flex items-center gap-1 shrink-0">
 						<span className="text-xs text-kumo-subtle">
-							{formatShortDate(email.date)}
+							{formatShortDate(email.date, dateLocale)}
 						</span>
 						{onViewSource && (
-							<Tooltip content="View source" side="bottom" asChild>
+							<Tooltip content={t("View source", "查看原始邮件")} side="bottom" asChild>
 								<Button
 									variant="ghost"
 									shape="square"
 									size="sm"
 									icon={<CodeIcon size={14} />}
 									onClick={onViewSource}
-									aria-label="View source"
+									aria-label={t("View source", "查看原始邮件")}
 									className="transition-opacity !h-6 !w-6"
 								/>
 							</Tooltip>
@@ -146,7 +148,7 @@ export default function ThreadMessage({
 							type="button"
 							onClick={onToggleExpand}
 							className="ml-1"
-							aria-label="Collapse message"
+							aria-label={t("Collapse message", "收起邮件")}
 						>
 							<CaretUpIcon
 								size={14}
@@ -179,7 +181,7 @@ export default function ThreadMessage({
 								loading={isSending}
 								disabled={isSending}
 							>
-								{isSending ? "Sending..." : "Send"}
+								{isSending ? t("Sending...", "正在发送…") : t("Send", "发送")}
 							</Button>
 						)}
 						{onEditDraft && (
@@ -190,7 +192,7 @@ export default function ThreadMessage({
 								onClick={onEditDraft}
 								disabled={isSending}
 							>
-								Edit
+								{t("Edit", "编辑")}
 							</Button>
 						)}
 						{onDeleteDraft && (
@@ -201,7 +203,7 @@ export default function ThreadMessage({
 								onClick={onDeleteDraft}
 								disabled={isSending}
 							>
-								Discard
+								{t("Discard", "放弃")}
 							</Button>
 						)}
 					</div>

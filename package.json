@@ -25,6 +25,7 @@
 		"preview": "npm run build && vite preview",
 		"typecheck": "npm run cf-typegen && react-router typegen && tsc -b",
 		"test:auth": "node tests/auth.test.mjs",
+		"test:i18n": "node tests/i18n.test.mjs",
 		"test:forwarding": "node tests/forwarding.test.mjs",
 		"test:contacts": "node tests/contacts.test.mjs && node tests/contact-recipients.test.mjs"
 	},

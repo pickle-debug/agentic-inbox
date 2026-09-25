@@ -5,6 +5,7 @@ import type { Contact } from "../../shared/contacts";
 import { insertContactRecipient, recipientToken } from "~/lib/contact-recipients";
 import { useContacts } from "~/queries/contacts";
 import api from "~/services/api";
+import { useI18n } from "~/hooks/useI18n";
 
 type Props = {
 	label?: string;
@@ -16,6 +17,7 @@ type Props = {
 };
 
 export default function ContactRecipientInput(props: Props) {
+	const { t } = useI18n();
 	const { data: session } = useQuery({ queryKey: ["session"], queryFn: api.getSession });
 	// Do not mount the directory query or render cached suggestions for mailbox identities.
 	if (session?.role === "admin") return <AdminContactRecipientInput {...props} />;
@@ -29,12 +31,12 @@ export default function ContactRecipientInput(props: Props) {
 		onChange={event => props.onChange(event.target.value)}
 		required={props.required}
 		disabled={props.disabled}
-		placeholder="Enter email addresses, separated by commas"
+		placeholder={t("Enter email addresses, separated by commas", "输入邮箱地址，多个地址用逗号分隔")}
 	/>;
 }
 
 function AdminContactRecipientInput({ label, accessibleLabel, value, onChange, required, disabled }: Props) {
-
+	const { t } = useI18n();
 	const id = useId();
 	const input = useRef<HTMLInputElement>(null);
 	const [open, setOpen] = useState(false);
@@ -81,7 +83,7 @@ function AdminContactRecipientInput({ label, accessibleLabel, value, onChange, r
 			required={required}
 			disabled={disabled}
 			autoComplete="off"
-			placeholder="Search names, emails, notes or introductions; separate addresses with commas"
+			placeholder={t("Search names, emails, notes or introductions; separate addresses with commas", "搜索姓名、邮箱、备注或介绍；多个地址用逗号分隔")}
 			role="combobox"
 			aria-autocomplete="list"
 			aria-expanded={open && !disabled}
@@ -104,8 +106,8 @@ function AdminContactRecipientInput({ label, accessibleLabel, value, onChange, r
 			}}
 		/>
 		{open && !disabled && <div className="absolute left-0 right-0 top-full z-50 mt-1 overflow-hidden rounded-lg border border-kumo-line bg-kumo-base shadow-lg">
-			<div className="border-b border-kumo-line px-3 py-2 text-xs text-kumo-subtle">System contacts</div>
-			<div id={`${id}-list`} role="listbox" aria-label={`${accessibleLabel} contact suggestions`} className="max-h-64 overflow-y-auto">
+			<div className="border-b border-kumo-line px-3 py-2 text-xs text-kumo-subtle">{t("System contacts", "系统联系人")}</div>
+			<div id={`${id}-list`} role="listbox" aria-label={t(`${accessibleLabel} contact suggestions`, `${accessibleLabel}联系人建议`)} className="max-h-64 overflow-y-auto">
 				{contacts.map((contact, index) => <div
 					key={contact.id} id={`${id}-option-${index}`} role="option" aria-selected={active === index}
 					className={`cursor-pointer px-3 py-2 text-sm ${active === index ? "bg-kumo-tint" : "hover:bg-kumo-tint"}`}
@@ -115,12 +117,12 @@ function AdminContactRecipientInput({ label, accessibleLabel, value, onChange, r
 				>
 					<div className="font-medium break-words">{contact.name}</div>
 					<div className="break-all text-kumo-subtle">{contact.email}</div>
-					{contact.notes && <div className="mt-1 line-clamp-2 break-words text-xs text-kumo-subtle">{"Notes: "}{contact.notes}</div>}
+					{contact.notes && <div className="mt-1 line-clamp-2 break-words text-xs text-kumo-subtle">{t("Notes: ", "备注：")}{contact.notes}</div>}
 					{contact.introduction && <div className="line-clamp-2 break-words text-xs text-kumo-subtle">{contact.introduction}</div>}
 				</div>)}
 			</div>
 			<div aria-live="polite" className="px-3 py-2 text-xs text-kumo-subtle">
-				{pending ? "Searching…" : error ? <>Unable to load contacts. You can still enter email addresses manually.<Button type="button" size="xs" variant="ghost" onClick={() => void refetch()}>Retry</Button></> : contacts.length === 0 ? "No matching contacts. Enter a full email address directly." : data && data.totalCount > contacts.length ? "Showing the first 8 matches. Keep typing to narrow the results." : "↑↓ to select, Enter to insert; or type an email address."}
+				{pending ? t("Searching…", "正在搜索…") : error ? <>{t("Unable to load contacts. You can still enter email addresses manually.", "联系人加载失败，仍可手动输入邮箱。")}<Button type="button" size="xs" variant="ghost" onClick={() => void refetch()}>{t("Retry", "重试")}</Button></> : contacts.length === 0 ? t("No matching contacts. Enter a full email address directly.", "没有匹配联系人，可直接输入完整邮箱地址。") : data && data.totalCount > contacts.length ? t("Showing the first 8 matches. Keep typing to narrow the results.", "仅显示前 8 项，请继续输入以缩小范围。") : t("↑↓ to select, Enter to insert; or type an email address.", "↑↓ 选择，Enter 填入；也可手动输入邮箱。")}
 			</div>
 		</div>}
 	</div>;

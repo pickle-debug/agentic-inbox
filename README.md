@@ -44,6 +44,10 @@ https://github.com/cloudflare/agentic-inbox/issues/4#issuecomment-4269118513
 - **Configurable and persistent** — Custom system prompts per mailbox, persistent chat history, streaming markdown responses, and tool call visibility
 - **Automatic forwarding** — Each mailbox can forward new incoming mail to a verified destination while keeping its Inbox copy and attachments
 
+### Interface language
+
+Choose **简体中文** or **English** using the language selector on the login page, mailbox list, mailbox header, contacts page, or **Settings > Language**. Changes apply immediately and are remembered in this browser for one year. The first visit follows the browser's preferred supported language, falling back to English. Dates and interface messages follow the selected language; email content, contact details, and custom folder names stay unchanged. No mailbox settings are changed. Run `npm run test:i18n` for preference, translation, and date-format checks.
+
 ### Automatically forward new mail
 
 1. Add and verify the destination mailbox in Cloudflare **Email Routing > Destination addresses**.

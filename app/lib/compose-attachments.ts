@@ -50,14 +50,17 @@ export function composeAttachmentFromStored(
 	};
 }
 
-export function blobToBase64(blob: Blob): Promise<string> {
+export function blobToBase64(
+	blob: Blob,
+	t: (english: string, chinese: string) => string = (english) => english,
+): Promise<string> {
 	return new Promise((resolve, reject) => {
 		const reader = new FileReader();
-		reader.onerror = () => reject(reader.error || new Error("Failed to read attachment."));
+		reader.onerror = () => reject(reader.error || new Error(t("Failed to read attachment.", "附件读取失败。")));
 		reader.onload = () => {
 			const result = reader.result;
 			if (typeof result !== "string") {
-				reject(new Error("Failed to encode attachment."));
+				reject(new Error(t("Failed to encode attachment.", "附件编码失败。")));
 				return;
 			}
 			const commaIndex = result.indexOf(",");
@@ -70,22 +73,23 @@ export function blobToBase64(blob: Blob): Promise<string> {
 export async function serializeComposeAttachments(
 	attachments: ComposeAttachment[],
 	loadStored: (emailId: string, attachmentId: string) => Promise<Blob>,
+	t: (english: string, chinese: string) => string = (english) => english,
 ): Promise<OutgoingAttachment[]> {
 	return Promise.all(
 		attachments.map(async (attachment) => {
 			let content = attachment.content;
 			if (content === undefined && attachment.file) {
-				content = await blobToBase64(attachment.file);
+				content = await blobToBase64(attachment.file, t);
 			}
 			if (content === undefined && attachment.stored) {
 				const blob = await loadStored(
 					attachment.stored.emailId,
 					attachment.stored.attachmentId,
 				);
-				content = await blobToBase64(blob);
+				content = await blobToBase64(blob, t);
 			}
 			if (content === undefined) {
-				throw new Error(`Failed to read attachment: ${attachment.filename}`);
+				throw new Error(t(`Failed to read attachment: ${attachment.filename}`, `附件读取失败：${attachment.filename}`));
 			}
 
 			return {
