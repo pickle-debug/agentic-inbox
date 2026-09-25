@@ -20,6 +20,7 @@ import { handleReplyEmail, handleForwardEmail } from "./routes/reply-forward";
 import { authStore } from "./auth";
 import { bodyLimit } from "hono/body-limit";
 import { Folders } from "../shared/folders";
+import { forwardingSettingsSchema } from "../shared/forwarding";
 import type { Env } from "./types";
 import { requireMailbox, type MailboxContext } from "./lib/mailbox";
 
@@ -30,8 +31,12 @@ type AppContext = Context<MailboxContext>;
 const CreateMailboxBody = z.object({
 	email: z.string().email(),
 	name: z.string().min(1),
-	settings: z.record(z.any()).optional(), // unvalidated — agentSystemPrompt goes straight to AI
+	settings: z.record(z.unknown()).optional(),
 });
+
+function mailboxSettingsSchema(mailboxId: string) {
+	return z.object({ forwarding: forwardingSettingsSchema(mailboxId).optional() }).passthrough();
+}
 
 const DraftBody = z.object({
 	to: z.string().optional(),
@@ -114,8 +119,12 @@ app.get("/api/v1/mailboxes", async (c) => {
 
 app.post("/api/v1/mailboxes", async (c) => {
 	if (c.var.identity.role !== "admin") return c.json({ error: "仅管理员可以创建邮箱。" }, 403);
-	const { name, settings, email: rawEmail } = CreateMailboxBody.parse(await c.req.json());
+	const body = CreateMailboxBody.safeParse(await c.req.json().catch(() => null));
+	if (!body.success) return c.json({ error: body.error.issues[0].message }, 400);
+	const { name, settings, email: rawEmail } = body.data;
 	const email = rawEmail.toLowerCase();
+	const parsedSettings = mailboxSettingsSchema(email).safeParse(settings ?? {});
+	if (!parsedSettings.success) return c.json({ error: parsedSettings.error.issues[0].message }, 400);
 	const domains = (c.env.DOMAINS || "").split(",").map(d => d.trim().toLowerCase());
 	if (!domains.includes(email.split("@")[1])) return c.json({ error: "邮箱必须属于已配置的域名。" }, 400);
 	const allowedAddresses = (c.env.EMAIL_ADDRESSES ?? []) as string[];
@@ -125,7 +134,7 @@ app.post("/api/v1/mailboxes", async (c) => {
 	const key = `mailboxes/${email}.json`;
 	if (await c.env.BUCKET.head(key)) return c.json({ error: "Mailbox already exists" }, 409);
 	const defaultSettings = { fromName: name, forwarding: { enabled: false, email: "" }, signature: { enabled: false, text: "" }, autoReply: { enabled: false, subject: "", message: "" }, autoDraftRepliesEnabled: false };
-	const finalSettings = { ...defaultSettings, ...settings };
+	const finalSettings = { ...defaultSettings, ...parsedSettings.data };
 	await c.env.BUCKET.put(key, JSON.stringify(finalSettings));
 	const stub = c.env.MAILBOX.get(c.env.MAILBOX.idFromName(email));
 	await stub.getFolders();
@@ -141,9 +150,13 @@ app.get("/api/v1/mailboxes/:mailboxId", async (c) => {
 
 app.put("/api/v1/mailboxes/:mailboxId", async (c) => {
 	const mailboxId = c.req.param("mailboxId")!;
-	const { settings } = (await c.req.json()) as { settings: Record<string, unknown> };
+	const body = z.object({ settings: mailboxSettingsSchema(mailboxId) }).safeParse(await c.req.json().catch(() => null));
+	if (!body.success) return c.json({ error: body.error.issues[0].message }, 400);
 	const key = `mailboxes/${mailboxId}.json`;
-	if (!(await c.env.BUCKET.head(key))) return c.json({ error: "Not found" }, 404);
+	const existing = await c.env.BUCKET.get(key);
+	if (!existing) return c.json({ error: "Not found" }, 404);
+	// Partial updates must not erase unrelated settings saved by older clients.
+	const settings = { ...await existing.json<Record<string, unknown>>(), ...body.data.settings };
 	await c.env.BUCKET.put(key, JSON.stringify(settings));
 	return c.json({ id: mailboxId, name: mailboxId, email: mailboxId, settings });
 });
@@ -391,23 +404,22 @@ async function streamToArrayBuffer(stream: ReadableStream, streamSize: number) {
 	return result;
 }
 
-async function receiveEmail(event: { raw: ReadableStream; rawSize: number }, env: Env, ctx: ExecutionContext) {
+async function receiveEmail(event: ForwardableEmailMessage, env: Env, ctx: ExecutionContext) {
 	const rawEmail = await streamToArrayBuffer(event.raw, event.rawSize);
 	const parsedEmail = await new PostalMime().parse(rawEmail);
 
-	if (!parsedEmail.to?.length || !parsedEmail.to[0].address) throw new Error("received email with empty to");
-
 	const allowedAddresses = ((env.EMAIL_ADDRESSES ?? []) as string[]).map((a) => a.toLowerCase());
-	const allRecipients = parsedEmail.to.map((t) => t.address?.toLowerCase()).filter(Boolean) as string[];
+	const allRecipients = (parsedEmail.to || []).map((t) => t.address?.toLowerCase()).filter(Boolean) as string[];
 	const ccRecipients = (parsedEmail.cc || []).map((e) => e.address?.toLowerCase()).filter(Boolean) as string[];
 	const bccRecipients = (parsedEmail.bcc || []).map((e) => e.address?.toLowerCase()).filter(Boolean) as string[];
 
-	let mailboxId: string | undefined;
-	if (allowedAddresses.length > 0) {
-		mailboxId = allRecipients.find((addr) => allowedAddresses.includes(addr));
-		if (!mailboxId) { console.log(`Ignoring email: no recipient matches EMAIL_ADDRESSES.`); return; }
-	} else { mailboxId = allRecipients[0]; }
+	// The SMTP envelope identifies the receiving mailbox, including BCC delivery.
+	const mailboxId = event.to?.trim().toLowerCase();
 	if (!mailboxId) throw new Error("received email with no valid recipient address");
+	if (allowedAddresses.length > 0 && !allowedAddresses.includes(mailboxId)) {
+		console.log("Ignoring email: envelope recipient does not match EMAIL_ADDRESSES.");
+		return;
+	}
 
 	const messageId = crypto.randomUUID();
 	if (!(await env.BUCKET.head(`mailboxes/${mailboxId}.json`))) { console.log(`Ignoring email for ${mailboxId}: mailbox does not exist`); return; }
@@ -454,11 +466,23 @@ async function receiveEmail(event: { raw: ReadableStream; rawSize: number }, env
 	try {
 		const settingsObject = await env.BUCKET.get(`mailboxes/${mailboxId}.json`);
 		const settings = settingsObject
-			? await settingsObject.json<{ autoDraftRepliesEnabled?: boolean }>()
+			? await settingsObject.json<{ autoDraftRepliesEnabled?: boolean; forwarding?: unknown }>()
 			: null;
 		autoDraftEnabled = settings?.autoDraftRepliesEnabled === true;
-	} catch {
-		// Fail closed: an unreadable setting must not trigger an AI draft.
+		// Forward only after storing the Inbox copy; missing or invalid legacy settings stay disabled.
+		const forwarding = forwardingSettingsSchema(mailboxId).safeParse(settings?.forwarding);
+		// A returned copy is still stored, but must not start another automatic forwarding hop.
+		if (forwarding.success && forwarding.data.enabled && !event.headers.has("X-Agentic-Inbox-Forwarded")) {
+			try {
+				await event.forward(forwarding.data.email, new Headers({ "X-Agentic-Inbox-Forwarded": "true" }));
+			} catch (error) {
+				// The original is already stored; retrying the whole delivery would create duplicate Inbox copies.
+				console.error("Automatic email forwarding failed:", error instanceof Error ? error.message : "Unknown error");
+			}
+		}
+	} catch (error) {
+		// Fail closed: unreadable settings must not trigger automatic actions.
+		console.error("Failed to read incoming email settings:", error instanceof Error ? error.message : "Unknown error");
 	}
 
 	if (autoDraftEnabled) {

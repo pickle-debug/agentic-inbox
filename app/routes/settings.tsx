@@ -7,6 +7,7 @@ import { RobotIcon, ArrowCounterClockwiseIcon } from "@phosphor-icons/react";
 import { useEffect, useState } from "react";
 import { useParams } from "react-router";
 import { useMailbox, useUpdateMailbox } from "~/queries/mailboxes";
+import { forwardingSettingsSchema } from "../../shared/forwarding";
 
 // Placeholder shown in the textarea when no custom prompt is set.
 // The authoritative default prompt lives in workers/agent/index.ts (DEFAULT_SYSTEM_PROMPT).
@@ -15,12 +16,15 @@ const PROMPT_PLACEHOLDER = `You are an email assistant that helps manage this in
 export default function SettingsRoute() {
 	const { mailboxId } = useParams<{ mailboxId: string }>();
 	const toastManager = useKumoToastManager();
-	const { data: mailbox } = useMailbox(mailboxId);
+	const { data: mailbox, error: loadError, isFetching, refetch } = useMailbox(mailboxId);
 	const updateMailboxMutation = useUpdateMailbox();
 
 	const [displayName, setDisplayName] = useState("");
 	const [agentPrompt, setAgentPrompt] = useState("");
 	const [autoDraftEnabled, setAutoDraftEnabled] = useState(false);
+	const [forwardingEnabled, setForwardingEnabled] = useState(false);
+	const [forwardingEmail, setForwardingEmail] = useState("");
+	const [forwardingError, setForwardingError] = useState("");
 	const [isSaving, setIsSaving] = useState(false);
 
 	useEffect(() => {
@@ -28,24 +32,38 @@ export default function SettingsRoute() {
 			setDisplayName(mailbox.settings?.fromName || mailbox.name || "");
 			setAgentPrompt(mailbox.settings?.agentSystemPrompt || "");
 			setAutoDraftEnabled(mailbox.settings?.autoDraftRepliesEnabled === true);
+			setForwardingEnabled(mailbox.settings?.forwarding?.enabled === true);
+			setForwardingEmail(mailbox.settings?.forwarding?.email || "");
+			setForwardingError("");
 		}
 	}, [mailbox]);
 
 	const handleSave = async () => {
-		if (!mailbox || !mailboxId) return;
+		if (!mailbox || !mailboxId || isSaving) return;
+		const forwarding = forwardingSettingsSchema(mailboxId).safeParse({
+			enabled: forwardingEnabled,
+			email: forwardingEmail,
+		});
+		if (!forwarding.success) {
+			setForwardingError(forwarding.error.issues[0].message);
+			return;
+		}
+		setForwardingError("");
 		setIsSaving(true);
 		const settings = {
 			...mailbox.settings,
 			fromName: displayName,
-			agentSystemPrompt: agentPrompt.trim() || undefined,
+			// Send an explicit empty value on reset: omitted fields are preserved by the settings API.
+			agentSystemPrompt: agentPrompt.trim(),
 			autoDraftRepliesEnabled: autoDraftEnabled,
+			forwarding: forwarding.data,
 		};
 		try {
 			await updateMailboxMutation.mutateAsync({ mailboxId, settings });
 			toastManager.add({ title: "Settings saved!" });
-		} catch {
+		} catch (error) {
 			toastManager.add({
-				title: "Failed to save settings",
+				title: error instanceof Error ? error.message : "Failed to save settings",
 				variant: "error",
 			});
 		} finally {
@@ -58,6 +76,18 @@ export default function SettingsRoute() {
 	};
 
 	if (!mailbox) {
+		if (loadError) {
+			return (
+				<div className="px-4 py-10 md:px-8 space-y-4">
+					<p role="alert" className="text-sm text-kumo-default">
+						{loadError.message || "Failed to load mailbox settings."}
+					</p>
+					<Button onClick={() => void refetch()} loading={isFetching} disabled={isFetching}>
+						Try again
+					</Button>
+				</div>
+			);
+		}
 		return (
 			<div className="flex justify-center py-20">
 				<Loader size="lg" />
@@ -81,6 +111,7 @@ export default function SettingsRoute() {
 						<Input
 							label="Display Name"
 							value={displayName}
+							disabled={isSaving}
 							onChange={(e) => setDisplayName(e.target.value)}
 						/>
 						<Input label="Email" type="email" value={mailbox.email} disabled />
@@ -96,6 +127,7 @@ export default function SettingsRoute() {
 						<input
 							type="checkbox"
 							checked={autoDraftEnabled}
+							disabled={isSaving}
 							onChange={(e) => setAutoDraftEnabled(e.target.checked)}
 							className="mt-0.5 size-4 accent-kumo-accent"
 						/>
@@ -104,6 +136,54 @@ export default function SettingsRoute() {
 							<span className="block text-xs text-kumo-subtle mt-1">Off by default. When disabled, incoming mail is stored without generating an AI reply.</span>
 						</span>
 					</label>
+				</div>
+
+				{/* Automatic Forwarding */}
+				<div className="rounded-lg border border-kumo-line bg-kumo-base p-5">
+					<div className="text-sm font-medium text-kumo-default mb-2">
+						Automatic Forwarding
+					</div>
+					<label className="flex items-start gap-3 cursor-pointer">
+						<input
+							type="checkbox"
+							checked={forwardingEnabled}
+							disabled={isSaving}
+							onChange={(e) => {
+								setForwardingEnabled(e.target.checked);
+								setForwardingError("");
+							}}
+							className="mt-0.5 size-4 accent-kumo-accent"
+						/>
+						<span>
+							<span className="block text-sm text-kumo-default">Forward new mail to another email address</span>
+							<span className="block text-xs text-kumo-subtle mt-1">Off by default. Forwards the original message and attachments while keeping a copy in this Inbox.</span>
+						</span>
+					</label>
+					<div className="mt-4">
+						<Input
+							label="Forwarding email address"
+							type="email"
+							value={forwardingEmail}
+							disabled={!forwardingEnabled || isSaving}
+							required={forwardingEnabled}
+							aria-invalid={!!forwardingError}
+							aria-describedby={forwardingError ? "forwarding-help forwarding-error" : "forwarding-help"}
+							onChange={(e) => {
+								setForwardingEmail(e.target.value);
+								setForwardingError("");
+							}}
+						/>
+						{forwardingError && (
+							<p id="forwarding-error" role="alert" className="text-xs text-kumo-error mt-2">{forwardingError}</p>
+						)}
+						<p id="forwarding-help" className="text-xs text-kumo-subtle mt-2">
+							First verify this address in Cloudflare Email Routing &gt; Destination addresses.
+							Turning forwarding off keeps the address for later.
+						</p>
+						<p className="text-xs text-kumo-subtle mt-2">
+							If forwarding fails, the original email stays in your Inbox. Check Worker logs for the reason.
+						</p>
+					</div>
 				</div>
 
 				{/* Agent System Prompt */}
@@ -126,6 +206,7 @@ export default function SettingsRoute() {
 								size="xs"
 								icon={<ArrowCounterClockwiseIcon size={14} />}
 								onClick={handleResetPrompt}
+								disabled={isSaving}
 							>
 								Reset to default
 							</Button>
@@ -137,6 +218,7 @@ export default function SettingsRoute() {
 					</p>
 					<textarea
 						value={agentPrompt}
+						disabled={isSaving}
 						onChange={(e) => setAgentPrompt(e.target.value)}
 						placeholder={PROMPT_PLACEHOLDER}
 						rows={12}
@@ -150,7 +232,7 @@ export default function SettingsRoute() {
 
 				{/* Save */}
 				<div className="flex justify-end">
-					<Button variant="primary" onClick={handleSave} loading={isSaving}>
+					<Button variant="primary" onClick={handleSave} loading={isSaving} disabled={isSaving}>
 						Save Changes
 					</Button>
 				</div>

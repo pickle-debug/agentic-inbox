@@ -42,6 +42,14 @@ https://github.com/cloudflare/agentic-inbox/issues/4#issuecomment-4269118513
 - **Built-in AI agent** — Side panel with 9 email tools for reading, searching, drafting, and sending
 - **Auto-draft on new email** — Agent automatically reads inbound emails and generates draft replies, always requiring explicit confirmation before sending
 - **Configurable and persistent** — Custom system prompts per mailbox, persistent chat history, streaming markdown responses, and tool call visibility
+- **Automatic forwarding** — Each mailbox can forward new incoming mail to a verified destination while keeping its Inbox copy and attachments
+
+### Automatically forward new mail
+
+1. Add and verify the destination mailbox in Cloudflare **Email Routing > Destination addresses**.
+2. Open the mailbox in Agentic Inbox, go to **Settings > Automatic Forwarding**, enable the checkbox, enter the destination address, and click **Save Changes**.
+
+Forwarding is off by default, including for existing mailboxes. It applies to new incoming mail only; disabling it keeps the destination saved for later. Original messages and attachments are forwarded using Cloudflare's native email forwarding. The Inbox copy remains available even if forwarding fails; check Worker logs for the delivery error. Failed forwarding is not automatically retried. Forwarding to the same mailbox is rejected, and messages already marked as forwarded by Agentic Inbox are stored without forwarding again to prevent loops.
 
 ## Stack
 

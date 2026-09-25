@@ -24,7 +24,8 @@
 		"dev": "react-router dev",
 		"preview": "npm run build && vite preview",
 		"typecheck": "npm run cf-typegen && react-router typegen && tsc -b",
-		"test:auth": "node tests/auth.test.mjs"
+		"test:auth": "node tests/auth.test.mjs",
+		"test:forwarding": "node tests/forwarding.test.mjs"
 	},
 	"dependencies": {
 		"@cloudflare/ai-chat": "^0.1.8",
