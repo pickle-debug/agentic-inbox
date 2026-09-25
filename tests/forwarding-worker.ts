@@ -2,7 +2,7 @@
 import app from "./auth-worker";
 import { receiveEmail } from "../workers/index";
 import type { Env } from "../workers/types";
-export { AuthStore, MailboxDO, EmailAgent } from "./auth-worker";
+export { AuthStore, MailboxDO, EmailAgent, ContactsStore } from "./auth-worker";
 
 export default {
 	async fetch(request: Request, env: Env, ctx: ExecutionContext) {

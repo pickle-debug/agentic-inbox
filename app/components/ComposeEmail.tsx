@@ -7,6 +7,7 @@ import { FloppyDiskIcon, PaperPlaneTiltIcon } from "@phosphor-icons/react";
 import { useParams } from "react-router";
 import { useComposeForm } from "~/hooks/useComposeForm";
 import ComposeAttachments from "./ComposeAttachments";
+import ContactRecipientInput from "./ContactRecipientInput";
 import RichTextEditor from "./RichTextEditor";
 import { useUIStore } from "~/hooks/useUIStore";
 
@@ -15,7 +16,7 @@ export default function ComposeEmail() {
 		mailboxId: string;
 		folder: string;
 	}>();
-	
+
 	const { isComposeModalOpen, closeComposeModal } = useUIStore();
 
 	const {
@@ -66,14 +67,13 @@ export default function ComposeEmail() {
 				>
 					{error && <Banner variant="error" text={error} />}
 					<div className="flex items-center gap-2">
-						<div className="flex-1">
-							<Input
+						<div className="flex-1 min-w-0">
+							<ContactRecipientInput
 								label="To"
-								type="text"
-								placeholder="recipient@example.com, another@example.com"
-								size="sm"
+								accessibleLabel="Recipients"
 								value={to}
-								onChange={(e) => setTo(e.target.value)}
+								onChange={setTo}
+								disabled={isSending || isSavingDraft}
 								required
 							/>
 						</div>
@@ -88,23 +88,21 @@ export default function ComposeEmail() {
 						)}
 					</div>
 					{showCcBcc && (
-						<Input
+						<ContactRecipientInput
 							label="CC"
-							type="text"
-							size="sm"
+							accessibleLabel="CC"
 							value={cc}
-							onChange={(e) => setCc(e.target.value)}
-							placeholder="Separate multiple addresses with commas"
+							onChange={setCc}
+							disabled={isSending || isSavingDraft}
 						/>
 					)}
 					{showCcBcc && (
-						<Input
+						<ContactRecipientInput
 							label="BCC"
-							type="text"
-							size="sm"
+							accessibleLabel="BCC"
 							value={bcc}
-							onChange={(e) => setBcc(e.target.value)}
-							placeholder="Separate multiple addresses with commas"
+							onChange={setBcc}
+							disabled={isSending || isSavingDraft}
 						/>
 					)}
 					<Input

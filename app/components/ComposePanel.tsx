@@ -7,6 +7,7 @@ import { FloppyDiskIcon, PaperPlaneTiltIcon, XIcon } from "@phosphor-icons/react
 import { useParams } from "react-router";
 import { useComposeForm } from "~/hooks/useComposeForm";
 import ComposeAttachments from "./ComposeAttachments";
+import ContactRecipientInput from "./ContactRecipientInput";
 import RichTextEditor from "./RichTextEditor";
 
 export default function ComposePanel() {
@@ -77,19 +78,9 @@ export default function ComposePanel() {
 					{error && <Banner variant="error" text={error} />}
 
 					<div className="space-y-3">
-						<div className="flex items-center gap-2">
-							<label className="text-sm font-medium text-kumo-subtle w-14 shrink-0">
-								To
-							</label>
-							<div className="flex-1 flex items-center gap-2 min-w-0">
-								<Input
-									type="text"
-									placeholder="recipient@example.com"
-									size="sm"
-									value={to}
-									onChange={(e) => setTo(e.target.value)}
-									required
-								/>
+						<div className="space-y-1.5">
+							<div className="flex items-center justify-between gap-2">
+								<span className="text-sm font-medium text-kumo-subtle">To</span>
 								{!showCcBcc && (
 									<button
 										type="button"
@@ -100,37 +91,42 @@ export default function ComposePanel() {
 									</button>
 								)}
 							</div>
+							<ContactRecipientInput
+								accessibleLabel="Recipients"
+								value={to}
+								onChange={setTo}
+								disabled={isSending || isSavingDraft}
+								required
+							/>
 						</div>
 
 						{showCcBcc && (
-							<div className="flex items-center gap-2">
-								<label className="text-sm font-medium text-kumo-subtle w-14 shrink-0">
+							<div className="space-y-1.5">
+								<div className="text-sm font-medium text-kumo-subtle">
 									CC
-								</label>
+								</div>
 								<div className="flex-1">
-									<Input
-										type="text"
-										size="sm"
+									<ContactRecipientInput
+										accessibleLabel="CC"
 										value={cc}
-										onChange={(e) => setCc(e.target.value)}
-										placeholder="Separate multiple addresses with commas"
+										onChange={setCc}
+										disabled={isSending || isSavingDraft}
 									/>
 								</div>
 							</div>
 						)}
 
 						{showCcBcc && (
-							<div className="flex items-center gap-2">
-								<label className="text-sm font-medium text-kumo-subtle w-14 shrink-0">
+							<div className="space-y-1.5">
+								<div className="text-sm font-medium text-kumo-subtle">
 									BCC
-								</label>
+								</div>
 								<div className="flex-1">
-									<Input
-										type="text"
-										size="sm"
+									<ContactRecipientInput
+										accessibleLabel="BCC"
 										value={bcc}
-										onChange={(e) => setBcc(e.target.value)}
-										placeholder="Separate multiple addresses with commas"
+										onChange={setBcc}
+										disabled={isSending || isSavingDraft}
 									/>
 								</div>
 							</div>
@@ -144,6 +140,7 @@ export default function ComposePanel() {
 								<Input
 									type="text"
 									placeholder="Email subject"
+									aria-label="Subject"
 									size="sm"
 									value={subject}
 									onChange={(e) => setSubject(e.target.value)}

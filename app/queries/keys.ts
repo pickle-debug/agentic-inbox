@@ -4,6 +4,10 @@
 
 /** Centralised query key factories for cache invalidation. */
 export const queryKeys = {
+	contacts: {
+		all: ["contacts"] as const,
+		list: (query: string, page: number, limit: number) => ["contacts", query, page, limit] as const,
+	},
 	mailboxes: {
 		all: ["mailboxes"] as const,
 		detail: (id: string) => ["mailboxes", id] as const,

@@ -3,6 +3,7 @@
 //     https://opensource.org/licenses/Apache-2.0
 
 import type { Email, Folder, Mailbox } from "~/types";
+import type { Contact, ContactInput, ContactList } from "../../shared/contacts";
 
 const REQUEST_TIMEOUT_MS = 30_000;
 
@@ -103,6 +104,12 @@ const api = {
 	getMailboxLogin: (id: string) => get<{ enabled: boolean }>(`/api/v1/mailboxes/${encodeURIComponent(id)}/login`),
 	setMailboxPassword: (id: string, password: string) => put<{ enabled: boolean }>(`/api/v1/mailboxes/${encodeURIComponent(id)}/login`, { password }),
 	disableMailboxLogin: (id: string) => del<{ enabled: boolean }>(`/api/v1/mailboxes/${encodeURIComponent(id)}/login`),
+	// The system address book is administrator-only, including reads and searches.
+	listContacts: (query: string, page = 1, limit = 50, signal?: AbortSignal) =>
+		get<ContactList>("/api/v1/contacts", { params: { q: query, page: String(page), limit: String(limit) }, signal }),
+	createContact: (contact: ContactInput) => post<Contact>("/api/v1/contacts", contact),
+	updateContact: (id: string, contact: ContactInput) => put<Contact>(`/api/v1/contacts/${encodeURIComponent(id)}`, contact),
+	deleteContact: (id: string) => del<void>(`/api/v1/contacts/${encodeURIComponent(id)}`),
 	// Config
 	getConfig: () =>
 		get<{ domains: string[]; emailAddresses: string[] }>("/api/v1/config"),

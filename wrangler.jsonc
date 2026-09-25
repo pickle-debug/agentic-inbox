@@ -36,6 +36,7 @@
 	"durable_objects": {
 		"bindings": [
 			{ "name": "AUTH", "class_name": "AuthStore" },
+			{ "name": "CONTACTS", "class_name": "ContactsStore" },
 			{
 				"name": "MAILBOX",
 				"class_name": "MailboxDO"
@@ -69,6 +70,7 @@
 				"EmailMCP"
 			]
 		},
-		{ "tag": "v4", "new_sqlite_classes": ["AuthStore"] }
+		{ "tag": "v4", "new_sqlite_classes": ["AuthStore"] },
+		{ "tag": "v5", "new_sqlite_classes": ["ContactsStore"] }
 	]
 }

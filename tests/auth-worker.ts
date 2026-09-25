@@ -13,6 +13,7 @@ export class AuthStore extends ProductionAuthStore {
 	}
 }
 export { MailboxDO } from "../workers/durableObject";
+export { ContactsStore } from "../workers/contacts/store";
 import { EmailAgent as ProductionAgent } from "../workers/agent";
 export class EmailAgent extends ProductionAgent {
 	emitTestUpdate() { this.broadcast("test-update"); }

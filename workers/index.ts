@@ -17,6 +17,7 @@ import {
 } from "./lib/email-helpers";
 import { SendEmailRequestSchema } from "./lib/schemas";
 import { handleReplyEmail, handleForwardEmail } from "./routes/reply-forward";
+import { contactRoutes } from "./routes/contacts";
 import { authStore } from "./auth";
 import { bodyLimit } from "hono/body-limit";
 import { Folders } from "../shared/folders";
@@ -100,6 +101,7 @@ app.use("/api/v1/mailboxes/:mailboxId/login", async (c, next) => {
 });
 app.use("/api/v1/mailboxes/:mailboxId/login", bodyLimit({ maxSize: 2048 }));
 app.use("/api/v1/mailboxes/:mailboxId/*", requireMailbox);
+app.route("/api/v1/contacts", contactRoutes);
 
 // -- Config ---------------------------------------------------------
 

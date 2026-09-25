@@ -14,6 +14,7 @@ export { MailboxDO } from "./durableObject";
 export { EmailAgent } from "./agent";
 export { EmailMCP } from "./mcp";
 export { AuthStore } from "./auth/store";
+export { ContactsStore } from "./contacts/store";
 
 declare module "react-router" {
 	export interface AppLoadContext {

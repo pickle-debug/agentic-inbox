@@ -51,6 +51,14 @@ https://github.com/cloudflare/agentic-inbox/issues/4#issuecomment-4269118513
 
 Forwarding is off by default, including for existing mailboxes. It applies to new incoming mail only; disabling it keeps the destination saved for later. Original messages and attachments are forwarded using Cloudflare's native email forwarding. The Inbox copy remains available even if forwarding fails; check Worker logs for the delivery error. Failed forwarding is not automatically retried. Forwarding to the same mailbox is rejected, and messages already marked as forwarded by Agentic Inbox are stored without forwarding again to prevent loops.
 
+### Administrator contacts
+
+Administrators can open **联系人 / Contacts** from the mailbox sidebar to create, edit, and delete contacts. Each contact has a name, a unique email address, optional notes, and an introduction. The directory is visible only to administrators, who can use it while operating any mailbox. Mailbox password users cannot view, search, or manage contacts; the API rejects their requests as well.
+
+When signed in as an administrator, type a name, email, note, or introduction keyword in **To / CC / BCC** in either compose view, then click a suggestion or use the arrow keys and Enter. The selected email replaces the address currently being edited, preserving other recipients. Mailbox password users keep plain comma-separated email fields without contact suggestions. The sender remains the current mailbox for both roles.
+
+Deploy the `CONTACTS` Durable Object binding and `v5` migration together with the Worker. Contacts are stored in a separate SQLite-backed `ContactsStore`; existing mailboxes, messages, and authentication data are unchanged. Rolling back the UI does not require deleting contact storage. Run `npm run test:contacts` for local API/permission/search and recipient-selection checks; no email is sent by these tests.
+
 ## Stack
 
 - **Frontend:** React 19, React Router v7, Tailwind CSS, Zustand, TipTap, `@cloudflare/kumo`
