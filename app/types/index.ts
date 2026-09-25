@@ -2,6 +2,8 @@
 // Licensed under the Apache 2.0 license found in the LICENSE file or at:
 //     https://opensource.org/licenses/Apache-2.0
 
+import type { AutoReplySettings } from "../../shared/automatic-replies";
+
 export interface SignatureSettings {
 	enabled: boolean;
 	text: string;
@@ -12,7 +14,7 @@ export interface MailboxSettings {
 	fromName?: string;
 	forwarding?: { enabled: boolean; email: string };
 	signature?: SignatureSettings;
-	autoReply?: { enabled: boolean; subject: string; message: string };
+	autoReply?: AutoReplySettings;
 	autoDraftRepliesEnabled?: boolean;
 	agentSystemPrompt?: string;
 }

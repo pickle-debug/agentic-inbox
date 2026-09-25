@@ -41,12 +41,23 @@ https://github.com/cloudflare/agentic-inbox/issues/4#issuecomment-4269118513
 - **Per-mailbox isolation** — Each mailbox runs in its own Durable Object with SQLite storage and R2 for attachments
 - **Built-in AI agent** — Side panel with 9 email tools for reading, searching, drafting, and sending
 - **Auto-draft on new email** — Agent automatically reads inbound emails and generates draft replies, always requiring explicit confirmation before sending
+- **Per-mailbox automatic replies** — Send a fixed acknowledgement and optionally generate an AI draft from the same Automatic Replies settings module
 - **Configurable and persistent** — Custom system prompts per mailbox, persistent chat history, streaming markdown responses, and tool call visibility
 - **Automatic forwarding** — Each mailbox can forward new incoming mail to a verified destination while keeping its Inbox copy and attachments
 
 ### Interface language
 
 Choose **简体中文** or **English** using the language selector on the login page, mailbox list, mailbox header, contacts page, or **Settings > Language**. Changes apply immediately and are remembered in this browser for one year. The first visit follows the browser's preferred supported language, falling back to English. Dates and interface messages follow the selected language; email content, contact details, and custom folder names stay unchanged. No mailbox settings are changed. Run `npm run test:i18n` for preference, translation, and date-format checks.
+
+### Automatically acknowledge new mail
+
+Open the receiving mailbox (for example, `support@yourdomain.com`), then **Settings > Automatic Replies**. Enable **Send a fixed automatic reply**, enter a message such as “你好，我们已经收到你的邮件，请不要重复发送”, and click **Save Changes**. An optional subject overrides the default `Re: original subject`. Templates are plain text, up to 10,000 characters, and stay saved when disabled.
+
+Fixed replies and **Create an AI reply draft when new mail arrives** have independent switches and can run together. The fixed message sends automatically using the mailbox address; AI replies remain drafts for review and manual sending. The AI prompt is in the same module. Both features default to off and apply to new incoming mail only, for that mailbox.
+
+Fixed replies go only to the SMTP envelope sender, never to CC/BCC or an arbitrary Reply-To. Automatic, bulk/list, forwarded, bounce, and self-sent messages are skipped. A sender receives at most one acknowledgement per mailbox in 24 hours; duplicate Message-IDs (or raw message hashes when missing) are remembered across restarts. Replies share the mailbox limits of 20 sends per hour and 100 per day. Pending or failed automatic attempts reserve quota and are not retried because a delivery timeout may already have sent the message. Successful submissions appear in Sent in the original thread. Failures preserve the Inbox copy and do not block AI drafting; inspect Worker logs for errors.
+
+Mailbox settings retain the existing `autoReply` and `autoDraftRepliesEnabled` fields. The additive SQLite migration `9_add_automatic_reply_attempts` runs locally in each mailbox on initialization; no new Cloudflare binding is required. Older code can ignore the extra table on rollback; keep it to preserve deduplication if upgrading again. Run `npm run test:automatic-replies` for local configuration, permission, delivery, duplicate/cooldown, rate-limit, and failure-isolation checks without sending real email.
 
 ### Automatically forward new mail
 

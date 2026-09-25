@@ -2,7 +2,6 @@
 // Licensed under the Apache 2.0 license found in the LICENSE file or at:
 //     https://opensource.org/licenses/Apache-2.0
 
-import { getAgentByName } from "agents";
 import { type Context, Hono } from "hono";
 import PostalMime from "postal-mime";
 import { z } from "zod";
@@ -22,6 +21,9 @@ import { authStore } from "./auth";
 import { bodyLimit } from "hono/body-limit";
 import { Folders } from "../shared/folders";
 import { forwardingSettingsSchema } from "../shared/forwarding";
+import { autoReplySettingsSchema } from "../shared/automatic-replies";
+import { processAutomaticReplies } from "./lib/automatic-replies";
+import type { EmailFull } from "./lib/schemas";
 import type { Env } from "./types";
 import { requireMailbox, type MailboxContext } from "./lib/mailbox";
 
@@ -36,7 +38,11 @@ const CreateMailboxBody = z.object({
 });
 
 function mailboxSettingsSchema(mailboxId: string) {
-	return z.object({ forwarding: forwardingSettingsSchema(mailboxId).optional() }).passthrough();
+	return z.object({
+		forwarding: forwardingSettingsSchema(mailboxId).optional(),
+		autoReply: autoReplySettingsSchema.optional(),
+		autoDraftRepliesEnabled: z.boolean().optional(),
+	}).passthrough();
 }
 
 const DraftBody = z.object({
@@ -452,7 +458,7 @@ async function receiveEmail(event: ForwardableEmailMessage, env: Env, ctx: Execu
 
 	const originalMessageId = parsedEmail.messageId ? extractMsgId(parsedEmail.messageId) : null;
 
-	await stub.createEmail(Folders.INBOX, {
+	const incoming = {
 		id: messageId, subject: parsedEmail.subject || "",
 		sender: (parsedEmail.from?.address || "").toLowerCase(), recipient: allRecipients.join(", "),
 		cc: ccRecipients.join(", ") || null, bcc: bccRecipients.join(", ") || null,
@@ -460,17 +466,18 @@ async function receiveEmail(event: ForwardableEmailMessage, env: Env, ctx: Execu
 		body: parsedEmail.html || parsedEmail.text || "",
 		in_reply_to: inReplyTo, email_references: emailReferences.length > 0 ? JSON.stringify(emailReferences) : null,
 		thread_id: threadId, message_id: originalMessageId, raw_headers: JSON.stringify(parsedEmail.headers),
-	}, attachmentData);
+		read: false, starred: false,
+	} satisfies EmailFull;
+	await stub.createEmail(Folders.INBOX, incoming, attachmentData);
 
-	// Auto-drafting is opt-in. Missing settings (including existing mailboxes)
-	// must never create a reply draft unexpectedly.
-	let autoDraftEnabled = false;
+	// Automatic replies are opt-in. Missing settings (including existing mailboxes)
+	// must never trigger a fixed reply or AI draft unexpectedly.
 	try {
 		const settingsObject = await env.BUCKET.get(`mailboxes/${mailboxId}.json`);
 		const settings = settingsObject
-			? await settingsObject.json<{ autoDraftRepliesEnabled?: boolean; forwarding?: unknown }>()
+			? await settingsObject.json<{ autoDraftRepliesEnabled?: boolean; autoReply?: unknown; fromName?: unknown; forwarding?: unknown }>()
 			: null;
-		autoDraftEnabled = settings?.autoDraftRepliesEnabled === true;
+		if (settings) ctx.waitUntil(processAutomaticReplies(env, mailboxId, settings, event, incoming, rawEmail));
 		// Forward only after storing the Inbox copy; missing or invalid legacy settings stay disabled.
 		const forwarding = forwardingSettingsSchema(mailboxId).safeParse(settings?.forwarding);
 		// A returned copy is still stored, but must not start another automatic forwarding hop.
@@ -485,14 +492,6 @@ async function receiveEmail(event: ForwardableEmailMessage, env: Env, ctx: Execu
 	} catch (error) {
 		// Fail closed: unreadable settings must not trigger automatic actions.
 		console.error("Failed to read incoming email settings:", error instanceof Error ? error.message : "Unknown error");
-	}
-
-	if (autoDraftEnabled) {
-		const agentStub = await getAgentByName(env.EMAIL_AGENT, mailboxId);
-		ctx.waitUntil(agentStub.fetch(new Request("https://agents/onNewEmail", {
-			method: "POST", headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({ mailboxId, emailId: messageId, sender: (parsedEmail.from?.address || "").toLowerCase(), subject: parsedEmail.subject || "", threadId }),
-		})).catch((e) => console.error("Auto-draft trigger failed:", (e as Error).message)));
 	}
 }
 

@@ -791,29 +791,44 @@ export class MailboxDO extends DurableObject<Env> {
 	 * Returns null if under limit, or an error message string if exceeded.
 	 */
 	async checkSendRateLimit(): Promise<string | null> {
-		const hourRow = [...this.ctx.storage.sql.exec(
-			`SELECT COUNT(*) as cnt FROM emails
-			 WHERE folder_id = ?1
-			   AND date >= datetime('now', '-1 hour')`,
-			Folders.SENT,
-		)][0] as { cnt: number } | undefined;
+		return this.sendRateLimitError(Date.now());
+	}
 
-		if ((hourRow?.cnt ?? 0) >= 20) {
-			return "Rate limit exceeded: max 20 emails per hour per mailbox";
+	private sendRateLimitError(now: number): string | null {
+		for (const [duration, limit, label] of [[3_600_000, 20, "hour"], [86_400_000, 100, "day"]] as const) {
+			const since = now - duration;
+			const row = [...this.ctx.storage.sql.exec<{ cnt: number }>(
+				`SELECT (
+					SELECT COUNT(*) FROM emails WHERE folder_id = ? AND julianday(date) >= julianday(?)
+				) + (
+					SELECT COUNT(*) FROM automatic_reply_attempts a WHERE attempted_at >= ?
+					AND NOT EXISTS (SELECT 1 FROM emails e WHERE e.id = a.email_id AND e.folder_id = ?)
+				) AS cnt`,
+				Folders.SENT, new Date(since).toISOString(), since, Folders.SENT,
+			)][0];
+			if (row.cnt >= limit) return `Rate limit exceeded: max ${limit} emails per ${label} per mailbox`;
 		}
-
-		const dayRow = [...this.ctx.storage.sql.exec(
-			`SELECT COUNT(*) as cnt FROM emails
-			 WHERE folder_id = ?1
-			   AND date >= datetime('now', '-1 day')`,
-			Folders.SENT,
-		)][0] as { cnt: number } | undefined;
-
-		if ((dayRow?.cnt ?? 0) >= 100) {
-			return "Rate limit exceeded: max 100 emails per day per mailbox";
-		}
-
 		return null;
+	}
+
+	/** Reserve before delivery: concurrent events and ambiguous send failures must not send twice. */
+	async claimAutomaticReply(messageKey: string, sender: string, emailId: string): Promise<string | null> {
+		return this.ctx.storage.transactionSync(() => {
+			const now = Date.now();
+			if ([...this.ctx.storage.sql.exec("SELECT 1 FROM automatic_reply_attempts WHERE message_key = ?", messageKey)].length) {
+				return "duplicate";
+			}
+			if ([...this.ctx.storage.sql.exec(
+				"SELECT 1 FROM automatic_reply_attempts WHERE sender = ? AND attempted_at > ? LIMIT 1", sender, now - 86_400_000,
+			)].length) return "sender cooldown";
+			const rateLimit = this.sendRateLimitError(now);
+			if (rateLimit) return rateLimit;
+			this.ctx.storage.sql.exec(
+				"INSERT INTO automatic_reply_attempts (message_key, sender, email_id, attempted_at) VALUES (?, ?, ?, ?)",
+				messageKey, sender, emailId, now,
+			);
+			return null;
+		});
 	}
 
 	// ── Email creation (Drizzle) ───────────────────────────────────

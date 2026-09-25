@@ -27,6 +27,7 @@
 		"test:auth": "node tests/auth.test.mjs",
 		"test:i18n": "node tests/i18n.test.mjs",
 		"test:forwarding": "node tests/forwarding.test.mjs",
+		"test:automatic-replies": "node tests/automatic-replies.test.mjs",
 		"test:contacts": "node tests/contacts.test.mjs && node tests/contact-recipients.test.mjs"
 	},
 	"dependencies": {

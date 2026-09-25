@@ -168,4 +168,17 @@ export const mailboxMigrations: Migration[] = [
             CREATE INDEX IF NOT EXISTS idx_emails_folder_date ON emails(folder_id, date DESC);
         `,
 	},
+	{
+		name: "9_add_automatic_reply_attempts",
+		sql: txn(`
+            CREATE TABLE automatic_reply_attempts (
+                message_key TEXT PRIMARY KEY,
+                sender TEXT NOT NULL,
+                email_id TEXT NOT NULL UNIQUE,
+                attempted_at INTEGER NOT NULL
+            );
+            CREATE INDEX idx_automatic_reply_sender_time ON automatic_reply_attempts(sender, attempted_at);
+            CREATE INDEX idx_automatic_reply_time ON automatic_reply_attempts(attempted_at);
+        `),
+	},
 ];

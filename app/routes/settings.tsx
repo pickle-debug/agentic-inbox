@@ -7,6 +7,7 @@ import { RobotIcon, ArrowCounterClockwiseIcon } from "@phosphor-icons/react";
 import { useEffect, useState } from "react";
 import { useParams } from "react-router";
 import { useMailbox, useUpdateMailbox } from "~/queries/mailboxes";
+import { autoReplySettingsSchema } from "../../shared/automatic-replies";
 import { forwardingSettingsSchema } from "../../shared/forwarding";
 import LanguageSelector from "~/components/LanguageSelector";
 import { useI18n } from "~/hooks/useI18n";
@@ -15,10 +16,12 @@ import { useI18n } from "~/hooks/useI18n";
 // The authoritative default prompt lives in workers/agent/index.ts (DEFAULT_SYSTEM_PROMPT).
 const PROMPT_PLACEHOLDER = `You are an email assistant that helps manage this inbox. You read emails, draft replies, and help organize conversations.\n\nWrite like a real person. Short, direct, flowing prose. Plain text only.\n\n(Leave empty to use the full built-in default prompt)`;
 
-const PROMPT_PLACEHOLDER_ZH = "你是一位帮助管理邮箱的邮件助手。你会阅读邮件、起草回复，并协助整理对话。\n\n像真人一样写作，简洁、直接、流畅。只使用纯文本。\n\n（留空则使用完整的内置默认提示词）";
-
 export default function SettingsRoute() {
 	const { mailboxId } = useParams<{ mailboxId: string }>();
+	return <MailboxSettingsForm key={mailboxId} mailboxId={mailboxId} />;
+}
+
+function MailboxSettingsForm({ mailboxId }: { mailboxId: string | undefined }) {
 	const { t, message } = useI18n();
 	const toastManager = useKumoToastManager();
 	const { data: mailbox, error: loadError, isFetching, refetch } = useMailbox(mailboxId);
@@ -27,16 +30,25 @@ export default function SettingsRoute() {
 	const [displayName, setDisplayName] = useState("");
 	const [agentPrompt, setAgentPrompt] = useState("");
 	const [autoDraftEnabled, setAutoDraftEnabled] = useState(false);
+	const [autoReplyEnabled, setAutoReplyEnabled] = useState(false);
+	const [autoReplySubject, setAutoReplySubject] = useState("");
+	const [autoReplyMessage, setAutoReplyMessage] = useState("");
+	const [autoReplyErrors, setAutoReplyErrors] = useState<{ subject?: string; message?: string }>({});
 	const [forwardingEnabled, setForwardingEnabled] = useState(false);
 	const [forwardingEmail, setForwardingEmail] = useState("");
 	const [forwardingError, setForwardingError] = useState("");
 	const [isSaving, setIsSaving] = useState(false);
+	const [saveError, setSaveError] = useState("");
 
 	useEffect(() => {
 		if (mailbox) {
 			setDisplayName(mailbox.settings?.fromName || mailbox.name || "");
 			setAgentPrompt(mailbox.settings?.agentSystemPrompt || "");
 			setAutoDraftEnabled(mailbox.settings?.autoDraftRepliesEnabled === true);
+			setAutoReplyEnabled(mailbox.settings?.autoReply?.enabled === true);
+			setAutoReplySubject(mailbox.settings?.autoReply?.subject || "");
+			setAutoReplyMessage(mailbox.settings?.autoReply?.message || "");
+			setAutoReplyErrors({});
 			setForwardingEnabled(mailbox.settings?.forwarding?.enabled === true);
 			setForwardingEmail(mailbox.settings?.forwarding?.email || "");
 			setForwardingError("");
@@ -45,15 +57,22 @@ export default function SettingsRoute() {
 
 	const handleSave = async () => {
 		if (!mailbox || !mailboxId || isSaving) return;
+		setSaveError("");
+		const autoReply = autoReplySettingsSchema.safeParse({
+			enabled: autoReplyEnabled,
+			subject: autoReplySubject,
+			message: autoReplyMessage,
+		});
 		const forwarding = forwardingSettingsSchema(mailboxId).safeParse({
 			enabled: forwardingEnabled,
 			email: forwardingEmail,
 		});
-		if (!forwarding.success) {
-			setForwardingError(forwarding.error.issues[0].message);
-			return;
-		}
-		setForwardingError("");
+		setAutoReplyErrors(autoReply.success ? {} : {
+			subject: autoReply.error.flatten().fieldErrors.subject?.[0],
+			message: autoReply.error.flatten().fieldErrors.message?.[0],
+		});
+		setForwardingError(forwarding.success ? "" : forwarding.error.issues[0].message);
+		if (!autoReply.success || !forwarding.success) return;
 		setIsSaving(true);
 		const settings = {
 			...mailbox.settings,
@@ -61,14 +80,17 @@ export default function SettingsRoute() {
 			// Send an explicit empty value on reset: omitted fields are preserved by the settings API.
 			agentSystemPrompt: agentPrompt.trim(),
 			autoDraftRepliesEnabled: autoDraftEnabled,
+			autoReply: autoReply.data,
 			forwarding: forwarding.data,
 		};
 		try {
 			await updateMailboxMutation.mutateAsync({ mailboxId, settings });
 			toastManager.add({ title: t("Settings saved!", "设置已保存！") });
 		} catch (error) {
+			const errorText = error instanceof Error ? error.message : t("Failed to save settings", "保存设置失败");
+			setSaveError(errorText);
 			toastManager.add({
-				title: error instanceof Error ? message(error.message) : t("Failed to save settings", "保存设置失败"),
+				title: message(errorText),
 				variant: "error",
 			});
 		} finally {
@@ -127,24 +149,108 @@ export default function SettingsRoute() {
 					</div>
 				</div>
 
-				{/* Automatic Draft Replies */}
+				{/* Automatic Replies */}
 				<div className="rounded-lg border border-kumo-line bg-kumo-base p-5">
-					<div className="text-sm font-medium text-kumo-default mb-2">
-						{t("Automatic Draft Replies", "自动回复草稿")}
-					</div>
+					<h2 className="text-sm font-medium text-kumo-default mb-2">{t("Automatic Replies", "自动回复")}</h2>
+					<p className="text-xs text-kumo-subtle mb-4 break-words">
+						{t(`Applies only to new mail received by ${mailbox.email}. Both options are off by default and can be enabled together.`, `仅适用于 ${mailbox.email} 收到的新邮件。两项功能默认关闭，可同时启用。`)}
+					</p>
 					<label className="flex items-start gap-3 cursor-pointer">
 						<input
 							type="checkbox"
-							checked={autoDraftEnabled}
+							checked={autoReplyEnabled}
 							disabled={isSaving}
-							onChange={(e) => setAutoDraftEnabled(e.target.checked)}
-							className="mt-0.5 size-4 accent-kumo-accent"
+							onChange={(e) => {
+								setAutoReplyEnabled(e.target.checked);
+								setAutoReplyErrors({});
+							}}
+							className="mt-0.5 size-4 shrink-0 accent-kumo-accent"
 						/>
 						<span>
-							<span className="block text-sm text-kumo-default">{t("Create a reply draft when new mail arrives", "收到新邮件时生成回复草稿")}</span>
-							<span className="block text-xs text-kumo-subtle mt-1">{t("Off by default. When disabled, incoming mail is stored without generating an AI reply.", "默认关闭。关闭时，新邮件会正常保存，但不会生成 AI 回复草稿。")}</span>
+							<span className="block text-sm text-kumo-default">{t("Send a fixed automatic reply", "发送固定内容的自动回复")}</span>
+							<span className="block text-xs text-kumo-subtle mt-1">{t("Sends the message below automatically, without review.", "自动发送下方消息，无需审核。")}</span>
 						</span>
 					</label>
+					<div className="mt-4 space-y-3">
+						<Input
+							label={t("Reply subject (optional)", "回复主题（可选）")}
+							value={autoReplySubject}
+							disabled={isSaving}
+							maxLength={200}
+							aria-invalid={!!autoReplyErrors.subject}
+							aria-describedby={autoReplyErrors.subject ? "auto-reply-subject-help auto-reply-subject-error" : "auto-reply-subject-help"}
+							onChange={(e) => {
+								setAutoReplySubject(e.target.value);
+								setAutoReplyErrors((errors) => ({ ...errors, subject: undefined }));
+							}}
+						/>
+						{autoReplyErrors.subject && <p id="auto-reply-subject-error" role="alert" className="text-xs text-kumo-error">{message(autoReplyErrors.subject)}</p>}
+						<p id="auto-reply-subject-help" className="text-xs text-kumo-subtle">{t("Leave empty to use “Re: original subject”. Up to 200 characters.", "留空则使用“Re: 原始主题”。最多 200 个字符。")}</p>
+						<div>
+							<label htmlFor="auto-reply-message" className="block text-sm text-kumo-default mb-2">{t("Reply message", "回复内容")}</label>
+							<textarea
+								id="auto-reply-message"
+								value={autoReplyMessage}
+								disabled={isSaving}
+								required={autoReplyEnabled}
+								maxLength={10000}
+								rows={5}
+								placeholder={t("Hello, we have received your email. Please do not send it again.", "您好，我们已收到您的邮件，请勿重复发送。")}
+								aria-invalid={!!autoReplyErrors.message}
+								aria-describedby={autoReplyErrors.message ? "auto-reply-message-help auto-reply-message-error" : "auto-reply-message-help"}
+								onChange={(e) => {
+									setAutoReplyMessage(e.target.value);
+									setAutoReplyErrors((errors) => ({ ...errors, message: undefined }));
+								}}
+								className="w-full resize-y rounded-lg border border-kumo-line bg-kumo-recessed px-3 py-2 text-sm text-kumo-default placeholder:text-kumo-subtle focus:outline-none focus:ring-1 focus:ring-kumo-ring disabled:opacity-50"
+							/>
+							{autoReplyErrors.message && <p id="auto-reply-message-error" role="alert" className="text-xs text-kumo-error mt-2">{message(autoReplyErrors.message)}</p>}
+							<p id="auto-reply-message-help" className="text-xs text-kumo-subtle mt-2">{t("Plain text only, up to 10,000 characters. You can edit and save this template while automatic replies are off.", "仅支持纯文本，最多 10,000 个字符。关闭自动回复时也可编辑和保存模板。")}</p>
+						</div>
+						<p className="text-xs text-kumo-subtle">{t("Replies at most once per sender every 24 hours for this mailbox. Automatic and bulk mail are skipped. If sending fails, the original email stays in your Inbox.", "此邮箱每 24 小时最多向同一发件人回复一次。自动邮件和群发邮件会被跳过。若发送失败，原始邮件仍保留在收件箱中。")}</p>
+					</div>
+					<div className="border-t border-kumo-line mt-5 pt-5">
+						<label className="flex items-start gap-3 cursor-pointer">
+							<input
+								type="checkbox"
+								checked={autoDraftEnabled}
+								disabled={isSaving}
+								onChange={(e) => setAutoDraftEnabled(e.target.checked)}
+								className="mt-0.5 size-4 shrink-0 accent-kumo-accent"
+							/>
+							<span>
+								<span className="block text-sm text-kumo-default">{t("Create an AI reply draft when new mail arrives", "收到新邮件时生成 AI 回复草稿")}</span>
+								<span className="block text-xs text-kumo-subtle mt-1">{t("The AI saves a draft for you to review and send. It does not send the draft automatically.", "AI 会保存草稿，供您审核后发送，不会自动发送草稿。")}</span>
+							</span>
+						</label>
+					</div>
+					<div className="mt-5">
+						<div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+							<div className="flex flex-wrap items-center gap-2">
+								<RobotIcon size={16} weight="duotone" className="text-kumo-subtle" />
+								<label htmlFor="agent-prompt" className="text-sm font-medium text-kumo-default">{t("AI Agent Prompt", "AI 助手提示词")}</label>
+								<Badge variant={isCustomPrompt ? "primary" : "secondary"}>{isCustomPrompt ? t("Custom", "自定义") : t("Default", "默认")}</Badge>
+							</div>
+							{isCustomPrompt && (
+								<Button variant="ghost" size="xs" icon={<ArrowCounterClockwiseIcon size={14} />} onClick={handleResetPrompt} disabled={isSaving}>
+									{t("Reset to default", "恢复默认")}
+								</Button>
+							)}
+						</div>
+						<p id="agent-prompt-help" className="text-xs text-kumo-subtle mb-3">
+							{t("Customize the AI agent's writing style and behavior for this mailbox, including reply drafts. Leave empty to use the built-in default. This does not change your fixed reply message.", "自定义此邮箱 AI 助手的写作风格和行为，包括回复草稿。留空则使用内置默认提示词。这不会改变您的固定回复内容。")}
+						</p>
+						<textarea
+							id="agent-prompt"
+							value={agentPrompt}
+							disabled={isSaving}
+							onChange={(e) => setAgentPrompt(e.target.value)}
+							placeholder={t(PROMPT_PLACEHOLDER, "你是一位帮助管理邮箱的邮件助手。你会阅读邮件、起草回复，并协助整理对话。\n\n像真人一样写作，简洁、直接、流畅。只使用纯文本。\n\n（留空则使用完整的内置默认提示词）")}
+							aria-describedby="agent-prompt-help"
+							rows={12}
+							className="w-full resize-y rounded-lg border border-kumo-line bg-kumo-recessed px-3 py-2 text-xs text-kumo-default placeholder:text-kumo-subtle focus:outline-none focus:ring-1 focus:ring-kumo-ring font-mono leading-relaxed disabled:opacity-50"
+						/>
+					</div>
 				</div>
 
 				{/* Automatic Forwarding */}
@@ -194,49 +300,8 @@ export default function SettingsRoute() {
 					</div>
 				</div>
 
-				{/* Agent System Prompt */}
-				<div className="rounded-lg border border-kumo-line bg-kumo-base p-5">
-					<div className="flex items-center justify-between mb-4">
-						<div className="flex items-center gap-2">
-							<RobotIcon size={16} weight="duotone" className="text-kumo-subtle" />
-							<span className="text-sm font-medium text-kumo-default">
-								{t("AI Agent Prompt", "AI 助手提示词")}
-							</span>
-							{isCustomPrompt ? (
-								<Badge variant="primary">{t("Custom", "自定义")}</Badge>
-							) : (
-								<Badge variant="secondary">{t("Default", "默认")}</Badge>
-							)}
-						</div>
-						{isCustomPrompt && (
-							<Button
-								variant="ghost"
-								size="xs"
-								icon={<ArrowCounterClockwiseIcon size={14} />}
-								onClick={handleResetPrompt}
-								disabled={isSaving}
-							>
-								{t("Reset to default", "恢复默认")}
-							</Button>
-						)}
-					</div>
-					<p className="text-xs text-kumo-subtle mb-3">
-						{t("Customize how the AI agent behaves for this mailbox. Leave empty to use the built-in default prompt.", "自定义此邮箱 AI 助手的行为。留空则使用内置默认提示词。")}
-					</p>
-					<textarea
-						value={agentPrompt}
-						disabled={isSaving}
-						onChange={(e) => setAgentPrompt(e.target.value)}
-						placeholder={t(PROMPT_PLACEHOLDER, PROMPT_PLACEHOLDER_ZH)}
-						rows={12}
-						className="w-full resize-y rounded-lg border border-kumo-line bg-kumo-recessed px-3 py-2 text-xs text-kumo-default placeholder:text-kumo-subtle focus:outline-none focus:ring-1 focus:ring-kumo-ring font-mono leading-relaxed"
-					/>
-					<p className="text-xs text-kumo-subtle mt-2">
-						{t("The prompt is sent as the system message to the AI model. It controls the agent's personality, writing style, and behavior rules.", "提示词会作为系统消息发送给 AI 模型，用于控制助手的个性、写作风格和行为规则。")}
-					</p>
-				</div>
-
 				{/* Save */}
+				{saveError && <p role="alert" className="text-sm text-kumo-error">{message(saveError)} {t("Your changes have not been saved. Try again.", "您的更改尚未保存，请重试。")}</p>}
 				<div className="flex justify-end">
 					<Button variant="primary" onClick={handleSave} loading={isSaving} disabled={isSaving}>
 						{t("Save Changes", "保存更改")}
