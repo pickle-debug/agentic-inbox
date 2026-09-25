@@ -2,7 +2,7 @@
 // Licensed under the Apache 2.0 license found in the LICENSE file or at:
 //     https://opensource.org/licenses/Apache-2.0
 
-import { Badge, Button, Dialog, Input, Tooltip } from "@cloudflare/kumo";
+import { Badge, Button, Dialog, Input, Tooltip, useKumoToastManager } from "@cloudflare/kumo";
 import {
 	ArchiveIcon,
 	CaretLeftIcon,
@@ -11,15 +11,18 @@ import {
 	PaperPlaneTiltIcon,
 	PencilSimpleIcon,
 	PlusIcon,
+	SignOutIcon,
 	TrashIcon,
 	TrayIcon,
 } from "@phosphor-icons/react";
+import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { NavLink, useNavigate, useParams } from "react-router";
 import { Folders, SYSTEM_FOLDER_IDS } from "shared/folders";
 import { useCreateFolder, useFolders } from "~/queries/folders";
 import { useMailbox } from "~/queries/mailboxes";
 import { useUIStore } from "~/hooks/useUIStore";
+import api from "~/services/api";
 
 const FOLDER_ICONS: Record<string, React.ReactNode> = {
 	[Folders.INBOX]: <TrayIcon size={18} weight="regular" />,
@@ -82,6 +85,20 @@ export default function Sidebar() {
 	const { data: currentMailbox } = useMailbox(mailboxId);
 	const [isCreateFolderOpen, setIsCreateFolderOpen] = useState(false);
 	const [newFolderName, setNewFolderName] = useState("");
+	const { data: session } = useQuery({ queryKey: ["session"], queryFn: api.getSession });
+	const toastManager = useKumoToastManager();
+	const [isLoggingOut, setIsLoggingOut] = useState(false);
+
+	const handleLogout = async () => {
+		setIsLoggingOut(true);
+		try {
+			const result = await api.logout();
+			window.location.replace(result.redirect);
+		} catch (error) {
+			toastManager.add({ title: error instanceof Error ? error.message : "退出登录失败，请重试。", variant: "error" });
+			setIsLoggingOut(false);
+		}
+	};
 
 	const customFolders = useMemo(
 		() =>
@@ -124,7 +141,7 @@ export default function Sidebar() {
 		<aside className="h-full w-64 bg-kumo-recessed flex flex-col shrink-0 border-r border-kumo-line">
 			{/* Back + identity */}
 			<div className="px-4 pt-4 pb-1">
-				<button
+				{session?.role === "admin" && <button
 					type="button"
 					onClick={() => {
 						navigate("/");
@@ -134,7 +151,17 @@ export default function Sidebar() {
 				>
 					<CaretLeftIcon size={14} />
 					<span>Mailboxes</span>
-				</button>
+				</button>}
+				{/* Mailbox users skip the picker; keep logout reachable even when the session query fails. */}
+				{session?.role !== "admin" && <Button
+					variant="ghost"
+					size="sm"
+					className="mb-2.5"
+					icon={<SignOutIcon size={14} />}
+					loading={isLoggingOut}
+					disabled={isLoggingOut}
+					onClick={handleLogout}
+				>退出登录</Button>}
 				<div className="px-1">
 					<div className="text-base font-semibold text-kumo-default truncate">
 						{displayName}

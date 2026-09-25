@@ -98,7 +98,7 @@ interface EmailListResponse {
 const api = {
 	getSession: () => get<{ role: "admin" | "mailbox"; email: string }>("/auth/session"),
 	getLoginConfig: () => get<{ adminLoginUrl: string | null }>("/auth/config"),
-	login: (email: string, password: string) => post("/auth/login", { email, password }),
+	login: (email: string, password: string) => post<{ role: "mailbox"; email: string }>("/auth/login", { email, password }),
 	logout: () => post<{ redirect: string }>("/auth/logout"),
 	getMailboxLogin: (id: string) => get<{ enabled: boolean }>(`/api/v1/mailboxes/${encodeURIComponent(id)}/login`),
 	setMailboxPassword: (id: string, password: string) => put<{ enabled: boolean }>(`/api/v1/mailboxes/${encodeURIComponent(id)}/login`, { password }),

@@ -15,7 +15,7 @@ import {
 import { EnvelopeIcon, PlusIcon, TrashIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import { type FormEvent, useEffect, useRef, useState } from "react";
-import { Link as RouterLink } from "react-router";
+import { Navigate, Link as RouterLink } from "react-router";
 import { MailboxPasswordDialog } from "~/components/MailboxPasswordDialog";
 import api from "~/services/api";
 import {
@@ -34,7 +34,7 @@ export default function HomeRoute() {
 	const { data: mailboxes = [], refetch: refetchMailboxes, isFetched: mailboxesFetched } = useMailboxes();
 	const createMailbox = useCreateMailbox();
 	const deleteMailbox = useDeleteMailbox();
-	const { data: session } = useQuery({
+	const { data: session, error: sessionError, refetch: refetchSession } = useQuery({
 		queryKey: ["session"],
 		queryFn: () => api.getSession(),
 	});
@@ -148,6 +148,20 @@ export default function HomeRoute() {
 		: mailboxes;
 
 	const isLoading = !configData;
+
+	// Also cover bookmarks and client-side returns to the mailbox picker without adding a history entry.
+	if (session?.role === "mailbox") {
+		return <Navigate to={`/mailbox/${encodeURIComponent(session.email)}/emails/inbox`} replace />;
+	}
+	if (sessionError) {
+		return <div className="min-h-screen flex flex-col items-center justify-center gap-4">
+			<Text variant="error">无法读取登录状态，请重试。</Text>
+			<Button onClick={() => refetchSession()}>重试</Button>
+		</div>;
+	}
+	if (!session) {
+		return <div className="min-h-screen flex items-center justify-center"><Loader size="lg" /></div>;
+	}
 
 	return (
 		<div className="min-h-screen bg-kumo-recessed">

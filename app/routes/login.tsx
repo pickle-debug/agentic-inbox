@@ -17,8 +17,9 @@ export default function LoginRoute() {
 		setError(null);
 		setLoading(true);
 		try {
-			await api.login(email, password);
-			window.location.href = "/";
+			const session = await api.login(email, password);
+			// Use the server-normalized identity; a full navigation clears the previous account's query cache.
+			window.location.replace(`/mailbox/${encodeURIComponent(session.email)}/emails/inbox`);
 		} catch (err) {
 			setError(err instanceof Error ? err.message : "登录失败，请检查邮箱和密码。");
 			setLoading(false);
