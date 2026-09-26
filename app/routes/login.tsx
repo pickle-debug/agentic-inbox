@@ -2,7 +2,6 @@ import { Button, Input, Text } from "@cloudflare/kumo";
 import { type FormEvent, useEffect, useState } from "react";
 import api from "~/services/api";
 import { useI18n } from "~/hooks/useI18n";
-import LanguageSelector from "~/components/LanguageSelector";
 
 export function meta() { return [{ title: "Agentic Inbox" }]; }
 
@@ -29,9 +28,9 @@ export default function LoginRoute() {
 			setLoading(false);
 		}
 	};
-	return <main className="min-h-screen bg-kumo-recessed flex items-center justify-center px-4 py-8">
+	return <main className="min-h-[calc(100dvh-3.5rem)] bg-kumo-recessed flex items-center justify-center px-4 py-8">
 		<section className="w-full max-w-md rounded-xl border border-kumo-line bg-kumo-base p-6 shadow-sm">
-			<div className="flex flex-wrap items-center justify-between gap-3"><h1 className="text-xl font-bold text-kumo-default">{t("Sign in to your mailbox", "登录邮箱")}</h1><LanguageSelector compact /></div>
+			<h1 className="text-xl font-bold text-kumo-default">{t("Sign in to your mailbox", "登录邮箱")}</h1>
 			<p className="mt-2 text-sm text-kumo-subtle">{t("Use your email address and password to access your mailbox.", "使用邮箱账号和密码访问该邮箱。")}</p>
 			<form className="mt-6 space-y-4" onSubmit={submit}>
 				{error && <div aria-live="polite"><Text variant="error" size="sm">{message(error)}</Text></div>}

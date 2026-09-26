@@ -25,6 +25,7 @@ async function request(url, { method = 'GET', body, cookie } = {}) {
 	return mf.dispatchFetch(origin + url, { method, headers: { Origin: origin, 'Content-Type': 'application/json', ...(cookie ? { Cookie: cookie } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) });
 }
 const update = (settings, cookie) => request(path, { method: 'PUT', body: { settings }, cookie });
+const setDrafts = (enabled) => request('/api/v1/settings', { method: 'PUT', body: { autoDraftRepliesEnabled: enabled, agentSystemPrompt: '' } });
 const read = async () => (await (await request(path)).json()).settings;
 const list = async (folder) => (await (await request(`${path}/emails?folder=${folder}`)).json());
 function fixtureMessage({ sender = `sender${++fixture}@example.net`, subject = 'Support request', id = `fixture-${++fixture}@example.net`, extra = [], toHeader = `To: ${mailbox}` } = {}) {
@@ -47,11 +48,11 @@ try {
 	for (const subject of ['\nHello', 'Hello\n', '\rHello', 'Hello\r']) {
 		assert.equal((await update({ autoReply: { ...reply, subject } })).status, 400, 'subject must reject CR/LF before trimming');
 	}
-	assert.equal((await update({ signature: { enabled: true, text: 'Keep signature' }, agentSystemPrompt: 'Keep prompt', extra: 'preserved' })).status, 200);
+	assert.equal((await update({ signature: { enabled: true, text: 'Keep signature' }, extra: 'preserved' })).status, 200);
 	assert.equal((await update({ autoReply: { ...reply, subject: '  收到邮件  ' } })).status, 200);
 	assert.equal((await read()).autoReply.subject, '收到邮件');
 	assert.equal((await read()).signature.text, 'Keep signature');
-	assert.equal((await read()).agentSystemPrompt, 'Keep prompt');
+	assert.equal((await read()).agentSystemPrompt, undefined);
 	assert.equal((await read()).extra, 'preserved');
 	assert.equal((await update({ autoReply: reply })).status, 200);
 	const sent = await receive(fixtureMessage({ id: 'original@example.net', extra: ['Reply-To: attacker@example.net'], toHeader: 'To: other@example.com\r\nCc: third@example.net' }));
@@ -97,7 +98,7 @@ try {
 	assert.equal((await list('sent')).totalCount, sentBeforeFailure, 'failed sends are not saved as Sent');
 	assert.deepEqual(await receive(failed), [], 'failed attempts must not be retried on redelivery');
 	assert.deepEqual(await receive({ failStore: true }, 500), [], 'failed Inbox storage prevents sending');
-	assert.equal((await update({ autoDraftRepliesEnabled: true })).status, 200);
+	assert.equal((await setDrafts(true)).status, 200);
 	assert.equal((await receive()).length, 1);
 	assert.equal((await list('draft')).totalCount, 1, 'fixed reply and AI draft coexist');
 	assert.equal((await receive({ failSend: true })).length, 1);
@@ -106,7 +107,8 @@ try {
 	assert.equal((await update({ autoReply: { ...reply, enabled: false } })).status, 200);
 	assert.deepEqual(await receive(), []);
 	assert.equal((await list('draft')).totalCount, 3, 'draft-only mode still works');
-	assert.equal((await update({ autoReply: reply, autoDraftRepliesEnabled: false })).status, 200);
+	assert.equal((await update({ autoReply: reply })).status, 200);
+	assert.equal((await setDrafts(false)).status, 200);
 	await request('/__quota', { method: 'POST', body: { mailbox, expire: true } });
 	assert.deepEqual(await receive(duplicate), [], 'message deduplication persists after sender cooldown expires');
 	assert.deepEqual(await receive(noId), [], 'raw MIME hash deduplication persists after sender cooldown expires');

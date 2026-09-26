@@ -33,6 +33,7 @@ import {
 } from "../lib/tools";
 import { Folders, FOLDER_TOOL_DESCRIPTION, MOVE_FOLDER_TOOL_DESCRIPTION } from "../../shared/folders";
 import type { Env } from "../types";
+import { getSystemSettings } from "../lib/system-settings";
 
 // AI SDK v6 changed tool() overloads significantly. We define tools as plain
 // objects matching the Tool type to avoid overload resolution issues.
@@ -49,8 +50,7 @@ function defineTool(def: {
 }
 
 /**
- * Default system prompt used when no custom prompt is configured for a mailbox.
- * Users can override this on a per-mailbox basis via the Settings UI.
+ * Default system prompt used when no system-wide custom prompt is configured.
  */
 const DEFAULT_SYSTEM_PROMPT = `You are an email assistant that helps manage this inbox. You read emails, draft replies, and help organize conversations.
 
@@ -90,23 +90,11 @@ You can ONLY draft emails. You do NOT have the ability to send emails directly.
 Use discard_draft to delete drafts that the operator rejects or that are no longer needed.`;
 
 /**
- * Fetch the custom system prompt for a mailbox from its R2 settings.
+ * Fetch the system-wide custom prompt from R2 settings.
  * Falls back to DEFAULT_SYSTEM_PROMPT if none is configured.
  */
-async function getSystemPrompt(env: Env, mailboxId: string): Promise<string> {
-	try {
-		const key = `mailboxes/${mailboxId}.json`;
-		const obj = await env.BUCKET.get(key);
-		if (obj) {
-			const settings = await obj.json<Record<string, unknown>>();
-			if (typeof settings.agentSystemPrompt === "string" && settings.agentSystemPrompt.trim()) {
-				return settings.agentSystemPrompt;
-			}
-		}
-	} catch {
-		// Fall through to default
-	}
-	return DEFAULT_SYSTEM_PROMPT;
+export async function getSystemPrompt(env: Env): Promise<string> {
+	return (await getSystemSettings(env)).agentSystemPrompt || DEFAULT_SYSTEM_PROMPT;
 }
 
 function createEmailTools(env: Env, mailboxId: string) {
@@ -332,7 +320,7 @@ export class EmailAgent extends AIChatAgent<any> {
 		const mailboxId = this.name;
 		const workersai = createWorkersAI({ binding: env.AI });
 		const tools = createEmailTools(env, mailboxId);
-		const systemPrompt = await getSystemPrompt(env, mailboxId);
+		const systemPrompt = await getSystemPrompt(env);
 
 		const result = streamText({
 			model: workersai("@cf/moonshotai/kimi-k2.5"),
@@ -363,6 +351,7 @@ export class EmailAgent extends AIChatAgent<any> {
 					threadId: string;
 				};
 				if (emailData.mailboxId !== this.name) return new Response("Forbidden", { status: 403 });
+				if (!(await getSystemSettings(this.env)).autoDraftRepliesEnabled) return Response.json({ status: "disabled" });
 				const result = await this.handleNewEmail(emailData);
 				return new Response(JSON.stringify(result), {
 					headers: { "Content-Type": "application/json" },
@@ -392,7 +381,7 @@ export class EmailAgent extends AIChatAgent<any> {
 		const env = this.env as Env;
 		const workersai = createWorkersAI({ binding: env.AI });
 		const tools = createEmailTools(env, emailData.mailboxId);
-		const systemPrompt = await getSystemPrompt(env, emailData.mailboxId);
+		const systemPrompt = await getSystemPrompt(env);
 
 		// Pre-read the email and thread so the agent has full context
 		// without needing to waste tool calls discovering it

@@ -1,7 +1,7 @@
 // Local-only harness. EMAIL.send is captured and all AI generation is replaced.
 import app from "./auth-worker";
 import { receiveEmail } from "../workers/index";
-import { EmailAgent as ProductionAgent } from "../workers/agent";
+import { EmailAgent as ProductionAgent, getSystemPrompt } from "../workers/agent";
 import { MailboxDO as ProductionMailbox } from "../workers/durableObject";
 import type { Env } from "../workers/types";
 export { AuthStore, ContactsStore } from "./auth-worker";
@@ -33,6 +33,10 @@ export class EmailAgent extends ProductionAgent {
 
 export default {
 	async fetch(request: Request, env: Env, ctx: ExecutionContext) {
+		if (new URL(request.url).pathname === "/__prompt") {
+			try { return Response.json({ prompt: await getSystemPrompt(env) }); }
+			catch { return Response.json({ error: "System settings unavailable" }, { status: 503 }); }
+		}
 		if (new URL(request.url).pathname === "/__quota") {
 			const { mailbox, count = 0, age = 0, expire = false } = await request.json<{ mailbox: string; count?: number; age?: number; expire?: boolean }>();
 			const stub = env.MAILBOX.get(env.MAILBOX.idFromName(mailbox)) as unknown as MailboxDO;
@@ -41,8 +45,8 @@ export default {
 			return Response.json({ error: await stub.checkSendRateLimit() });
 		}
 		if (new URL(request.url).pathname !== "/__receive") return app.fetch(request, env, ctx);
-		const { raw, to, from, failSend, failStore } = await request.json<{
-			raw: string; to: string; from: string; failSend?: boolean; failStore?: boolean;
+		const { raw, to, from, failSend, failStore, failSettings } = await request.json<{
+			raw: string; to: string; from: string; failSend?: boolean; failStore?: boolean; failSettings?: boolean;
 		}>();
 		const sent: Record<string, unknown>[] = [];
 		const pending: Promise<unknown>[] = [];
@@ -57,6 +61,16 @@ export default {
 		} as ForwardableEmailMessage;
 		const testEnv = {
 			...env,
+			...(failSettings ? { BUCKET: new Proxy(env.BUCKET, {
+				get(target, property) {
+					if (property === "get") return (key: string) => {
+						if (key === "settings/system.json") throw new Error("Test settings read failure");
+						return target.get(key);
+					};
+					const value = Reflect.get(target, property);
+					return typeof value === "function" ? value.bind(target) : value;
+				},
+			}) } : {}),
 			EMAIL: { async send(payload: Record<string, unknown>) {
 				const storedCount = await env.MAILBOX.get(env.MAILBOX.idFromName(to.toLowerCase())).countEmails({ folder: "inbox" });
 				sent.push({ ...payload, storedCount });

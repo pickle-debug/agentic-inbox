@@ -27,6 +27,7 @@ import {
 import { ApiError } from "~/services/api";
 import { I18nProvider, useI18n } from "~/hooks/useI18n";
 import { getRequestLocale } from "~/lib/i18n";
+import SystemHeader from "~/components/SystemHeader";
 import "./index.css";
 
 export function loader({ request }: LoaderFunctionArgs) {
@@ -132,6 +133,7 @@ export default function App() {
 			<LinkProvider component={KumoLink}>
 				<TooltipProvider>
 					<Toasty>
+						<SystemHeader />
 						<Outlet />
 					</Toasty>
 				</TooltipProvider>

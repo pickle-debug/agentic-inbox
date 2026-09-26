@@ -15,8 +15,6 @@ export interface MailboxSettings {
 	forwarding?: { enabled: boolean; email: string };
 	signature?: SignatureSettings;
 	autoReply?: AutoReplySettings;
-	autoDraftRepliesEnabled?: boolean;
-	agentSystemPrompt?: string;
 }
 
 export interface Mailbox {

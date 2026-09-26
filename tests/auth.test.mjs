@@ -21,6 +21,60 @@ async function request(path, { method = 'GET', cookie, body, source = origin, he
 const auth = await mf.getDurableObjectNamespace('AUTH');
 const store = auth.get(auth.idFromName('auth'));
 try {
+ // A failed connection cleanup must not misreport a committed password change.
+ const cleanupEmail = 'cleanup-failure@example.com';
+ const cleanupPath = `/api/v1/mailboxes/${cleanupEmail}`;
+ assert.equal((await request('/api/v1/mailboxes', { method: 'POST', body: { email: cleanupEmail, name: cleanupEmail } })).status, 201);
+ assert.equal((await request(cleanupPath + '/login', { method: 'PUT', body: { password } })).status, 200);
+ const cleanupLogin = await request('/auth/login', { method: 'POST', body: { email: cleanupEmail, password } });
+ const cleanupCookie = cleanupLogin.headers.get('set-cookie').split(';')[0];
+ const cleanupAgents = await mf.getDurableObjectNamespace('EMAIL_AGENT');
+ const cleanupAgent = cleanupAgents.get(cleanupAgents.idFromName(cleanupEmail));
+ await cleanupAgent.setDisconnectFailure(true);
+ const cleanupChange = await request(cleanupPath + '/password', { method: 'POST', cookie: cleanupCookie, body: { currentPassword: password, password: password + '-changed' } });
+ assert.equal(cleanupChange.status, 200);
+ assert.deepEqual(await cleanupChange.json(), { ok: true });
+ assert.equal((await request('/auth/session', { cookie: cleanupCookie })).status, 401);
+ assert.equal((await request('/auth/login', { method: 'POST', body: { email: cleanupEmail, password } })).status, 401);
+ assert.equal((await request('/auth/login', { method: 'POST', body: { email: cleanupEmail, password: password + '-changed' } })).status, 200);
+ await cleanupAgent.setDisconnectFailure(false);
+ assert.equal((await request(cleanupPath, { method: 'DELETE' })).status, 204);
+ // Self-service password changes share login throttling and revoke every mailbox session.
+ const selfEmail = 'self-password@example.com';
+ const selfPath = `/api/v1/mailboxes/${selfEmail}`;
+ assert.equal((await request('/api/v1/mailboxes', { method: 'POST', body: { email: selfEmail, name: selfEmail } })).status, 201);
+ assert.equal((await request(selfPath + '/login', { method: 'PUT', body: { password } })).status, 200);
+ const selfLogin = await request('/auth/login', { method: 'POST', body: { email: selfEmail, password } });
+ assert.equal(selfLogin.status, 200);
+ const selfCookie = selfLogin.headers.get('set-cookie').split(';')[0];
+ const secondSelfLogin = await request('/auth/login', { method: 'POST', body: { email: selfEmail, password } });
+ const secondSelfCookie = secondSelfLogin.headers.get('set-cookie').split(';')[0];
+ const changeBody = { currentPassword: password, password: password + '-changed' };
+ assert.equal((await request(selfPath + '/password', { method: 'POST', body: changeBody })).status, 403, 'admin must use reset endpoint');
+ assert.equal((await request('/api/v1/mailboxes/other@example.com/password', { method: 'POST', cookie: selfCookie, body: changeBody })).status, 403);
+ assert.equal((await request(selfPath + '/password', { method: 'POST', cookie: selfCookie, source: 'https://other.test', body: changeBody })).status, 403);
+ assert.equal((await request(selfPath + '/password', { method: 'POST', cookie: selfCookie, body: { ...changeBody, password: 'short' } })).status, 400);
+ assert.equal((await request(selfPath + '/password', { method: 'POST', cookie: selfCookie, body: { ...changeBody, currentPassword: 'wrong' } })).status, 401);
+ assert.equal((await request('/auth/session', { cookie: selfCookie })).status, 200, 'incorrect password must not revoke session');
+ const selfWs = await request(`/agents/email-agent/${encodeURIComponent(selfEmail)}`, { cookie: selfCookie, headers: { Upgrade: 'websocket', Origin: origin } });
+ assert.equal(selfWs.status, 101);
+ selfWs.webSocket.accept();
+ const changed = await request(selfPath + '/password', { method: 'POST', cookie: selfCookie, body: changeBody });
+ assert.equal(changed.status, 200);
+ assert.deepEqual(await changed.json(), { ok: true });
+ for (const oldCookie of [selfCookie, secondSelfCookie]) assert.equal((await request('/auth/session', { cookie: oldCookie })).status, 401);
+ const selfAgents = await mf.getDurableObjectNamespace('EMAIL_AGENT');
+ assert.ok((await selfAgents.get(selfAgents.idFromName(selfEmail)).connectionStates()).every(state => state !== 1));
+ selfWs.webSocket.close();
+ assert.equal((await request('/auth/login', { method: 'POST', body: { email: selfEmail, password } })).status, 401);
+ const changedLogin = await request('/auth/login', { method: 'POST', body: { email: selfEmail, password: changeBody.password } });
+ assert.equal(changedLogin.status, 200);
+ const changedCookie = changedLogin.headers.get('set-cookie').split(';')[0];
+ // Six attempts above (including two successful logins and the change); no reset on success.
+ for (let i = 0; i < 4; i++) assert.equal((await request(selfPath + '/password', { method: 'POST', cookie: changedCookie, body: { ...changeBody, currentPassword: 'wrong' } })).status, 401);
+ assert.equal((await request(selfPath + '/password', { method: 'POST', cookie: changedCookie, body: { currentPassword: changeBody.password, password } })).status, 429);
+ assert.equal((await request('/auth/login', { method: 'POST', body: { email: selfEmail, password: changeBody.password } })).status, 429, 'password changes and login share the email limit');
+ assert.equal((await request(selfPath, { method: 'DELETE' })).status, 204);
  for (const email of ['contact@example.com', 'gidon@example.com']) {
   assert.equal((await request('/api/v1/mailboxes', { method: 'POST', body: { email, name: email } })).status, 201);
   assert.equal((await request(`/api/v1/mailboxes/${email}/login`, { method: 'PUT', body: { password } })).status, 200);
@@ -157,5 +211,5 @@ try {
  assert.equal((await request('/api/v1/mailboxes/contact@example.com', { cookie: '__Host-inbox_session=' + legacyToken })).status, 403);
  const afterMigration = await upgradedStore.adminSession('admin@example.net', Date.now() + 60_000);
  assert.equal((await upgradedStore.session(afterMigration.token)).role, 'admin');
- console.log('PASS: legacy-session migration, single-origin admin exchange, expiry cap, role switching, admin logout and agent revocation, password login, CSRF, mailbox isolation, attachments, admin-only controls, MCP denial, agent scoping, reset/socket revocation, logout, disable, rate limit.');
+ console.log('PASS: self-service password change, shared throttling, session/socket revocation, legacy-session migration, single-origin admin exchange, expiry cap, role switching, admin logout and agent revocation, password login, CSRF, mailbox isolation, attachments, admin-only controls, MCP denial, agent scoping, reset/socket revocation, logout, disable, rate limit.');
 } finally { await mf.dispose(); await rm(dir, { recursive: true, force: true }); }

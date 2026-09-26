@@ -25,7 +25,6 @@ import {
 } from "~/queries/mailboxes";
 import { queryKeys } from "~/queries/keys";
 import { useI18n } from "~/hooks/useI18n";
-import LanguageSelector from "~/components/LanguageSelector";
 
 export function meta() {
 	return [{ title: "Agentic Inbox" }];
@@ -156,17 +155,17 @@ export default function HomeRoute() {
 		return <Navigate to={`/mailbox/${encodeURIComponent(session.email)}/emails/inbox`} replace />;
 	}
 	if (sessionError) {
-		return <div className="min-h-screen flex flex-col items-center justify-center gap-4">
+		return <div className="min-h-[calc(100dvh-3.5rem)] flex flex-col items-center justify-center gap-4">
 			<Text variant="error">{t("Unable to load login status. Please try again.", "无法读取登录状态，请重试。")}</Text>
 			<Button onClick={() => refetchSession()}>{t("Retry", "重试")}</Button>
 		</div>;
 	}
 	if (!session) {
-		return <div className="min-h-screen flex items-center justify-center"><Loader size="lg" /></div>;
+		return <div className="min-h-[calc(100dvh-3.5rem)] flex items-center justify-center"><Loader size="lg" /></div>;
 	}
 
 	return (
-		<div className="min-h-screen bg-kumo-recessed">
+		<div className="min-h-[calc(100dvh-3.5rem)] bg-kumo-recessed">
 			<div className="mx-auto max-w-2xl px-4 py-8 md:px-6 md:py-16">
 				<div className="mb-8">
 					<div className="flex flex-wrap items-center justify-between gap-4">
@@ -175,7 +174,6 @@ export default function HomeRoute() {
 							{session && <p className="mt-1 break-all text-sm text-kumo-subtle">{session.email} · {isAdmin ? t("Administrator", "管理员") : t("Mailbox account", "邮箱账号")}</p>}
 						</div>
 						<div className="flex flex-wrap items-center justify-end gap-2">
-						<LanguageSelector compact />
 						{isAdmin && !isConfigured && (
 							<Button
 								variant="primary"

@@ -47,13 +47,13 @@ try {
 	assert.equal((await request(path, { method: 'PUT', body: {} })).status, 400);
 	assert.equal((await mf.dispatchFetch(origin + path, { method: 'PUT', headers: { Origin: origin, 'Content-Type': 'application/json' }, body: '{' })).status, 400);
 	assert.equal((await request('/api/v1/mailboxes', { method: 'POST', body: { email: 'invalid@example.com', name: 'Fixture', settings: { forwarding: { enabled: true, email: 'invalid@example.com' } } } })).status, 400);
-	assert.equal((await update({ agentSystemPrompt: 'Custom', signature: { enabled: true, text: 'Keep me' }, extra: 'preserved' })).status, 200);
+	assert.equal((await update({ signature: { enabled: true, text: 'Keep me' }, extra: 'preserved' })).status, 200);
 	assert.equal((await update({ forwarding: { enabled: true, email: ' DESTINATION@EXAMPLE.NET ' } })).status, 200);
 	assert.deepEqual((await read()).forwarding, { enabled: true, email: target });
 	assert.equal((await read()).signature.text, 'Keep me');
 	assert.equal((await read()).extra, 'preserved');
-	assert.equal((await update({ agentSystemPrompt: '' })).status, 200);
-	assert.equal((await read()).agentSystemPrompt, '', 'prompt reset must still work after merging settings');
+	assert.equal((await update({ agentSystemPrompt: '' })).status, 400, 'AI settings require the system endpoint');
+	assert.equal((await read()).agentSystemPrompt, undefined);
 	assert.equal((await read()).forwarding.enabled, true);
 
 	const forwarded = await receive({ to: 'CONTACT@EXAMPLE.COM', raw: mime('To: other@example.com\r\nCc: contact@example.com') });
@@ -97,7 +97,7 @@ try {
 	const cookie = login.headers.get('set-cookie').split(';')[0];
 	assert.equal((await update({ forwarding: { enabled: true, email: target } }, cookie)).status, 200);
 	assert.equal((await request('/api/v1/mailboxes/other@example.com', { method: 'PUT', cookie, body: { settings: { forwarding: { enabled: true, email: target } } } })).status, 403);
-	console.log('PASS: forwarding configuration, normalization, validation, merge/prompt reset, mailbox permissions, envelope/CC/BCC routing, Inbox and attachment retention, disabled/legacy settings, loop prevention and isolated forwarding/storage failures. No external email sent.');
+	console.log('PASS: forwarding configuration, normalization, validation, merge and AI field rejection, mailbox permissions, envelope/CC/BCC routing, Inbox and attachment retention, disabled/legacy settings, loop prevention and isolated forwarding/storage failures. No external email sent.');
 } finally {
 	await mf.dispose();
 	await rm(dir, { recursive: true, force: true });

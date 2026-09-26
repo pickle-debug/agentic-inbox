@@ -18,7 +18,7 @@ export function MailboxPasswordDialog({ mailboxId, email, open, onOpenChange }: 
 	const [error, setError] = useState<string | null>(null);
 	const [isSaving, setIsSaving] = useState(false);
 	const [isDisabling, setIsDisabling] = useState(false);
-	const { data, isLoading, refetch } = useQuery({
+	const { data, isLoading, error: loadError, isFetching, refetch } = useQuery({
 		queryKey: ["mailbox-login", mailboxId],
 		queryFn: () => api.getMailboxLogin(mailboxId),
 		enabled: open,
@@ -34,6 +34,7 @@ export function MailboxPasswordDialog({ mailboxId, email, open, onOpenChange }: 
 
 	const handleSubmit = async (event: FormEvent) => {
 		event.preventDefault();
+		if (isSaving || isDisabling) return;
 		setError(null);
 		if (password.length < 12 || password.length > 128) {
 			setError(t("Password must be 12 to 128 characters.", "密码长度必须在 12 到 128 个字符之间。"));
@@ -57,6 +58,7 @@ export function MailboxPasswordDialog({ mailboxId, email, open, onOpenChange }: 
 	};
 
 	const disable = async () => {
+		if (isSaving || isDisabling) return;
 		setError(null);
 		setIsDisabling(true);
 		try {
@@ -70,26 +72,30 @@ export function MailboxPasswordDialog({ mailboxId, email, open, onOpenChange }: 
 	};
 
 	const enabled = data?.enabled === true;
+	const busy = isSaving || isDisabling;
 	return (
-		<Dialog.Root open={open} onOpenChange={onOpenChange}>
-			<Dialog size="sm" className="p-6">
+		<Dialog.Root open={open} onOpenChange={(next) => { if (!busy) onOpenChange(next); }}>
+			<Dialog size="sm" className="max-h-[90dvh] overflow-y-auto p-6">
 				<Dialog.Title className="text-base font-semibold mb-2">{t("Mailbox password login", "邮箱密码登录")}</Dialog.Title>
 				<Dialog.Description className="text-sm text-kumo-subtle mb-5">
 					{t(`Set a separate login password for ${email}. This account can only access its own mailbox.`, `为 ${email} 设置独立登录密码。该账号登录后只能访问自己的邮箱。`)}
 				</Dialog.Description>
 				<div aria-live="polite" className="mb-4 text-sm">
-					{error ? <Text variant="error" size="sm">{message(error)}</Text> : isLoading ? t("Loading login status…", "正在读取登录状态…") : enabled ? t("Password login is enabled.", "密码登录已启用。") : t("Password login is not enabled.", "密码登录尚未启用。")}
+					{error || loadError ? <Text variant="error" size="sm">{message(error || loadError!.message)}</Text> : isLoading ? t("Loading login status…", "正在读取登录状态…") : enabled ? t("Password login is enabled.", "密码登录已启用。") : t("Password login is not enabled.", "密码登录尚未启用。")}
 				</div>
+				{loadError && <Button size="sm" className="mb-4" disabled={isFetching} onClick={() => void refetch()}>{t("Retry", "重试")}</Button>}
 				<form onSubmit={handleSubmit} className="space-y-4">
+					<fieldset disabled={busy || isLoading || !!loadError} className="space-y-4">
 					<Input label={enabled ? t("New password", "新密码") : t("Password", "密码")} type="password" autoComplete="new-password" minLength={12} maxLength={128} value={password} onChange={(event) => setPassword(event.target.value)} required />
 					<Input label={t("Confirm password", "确认密码")} type="password" autoComplete="new-password" minLength={12} maxLength={128} value={confirmation} onChange={(event) => setConfirmation(event.target.value)} required />
 					<div className="flex flex-wrap justify-between gap-2 pt-2">
-						{enabled ? <Button type="button" variant="destructive" size="sm" loading={isDisabling} onClick={disable}>{t("Disable password login", "停用密码登录")}</Button> : <span />}
+						{enabled ? <Button type="button" variant="destructive" size="sm" loading={isDisabling} disabled={busy} onClick={disable}>{t("Disable password login", "停用密码登录")}</Button> : <span />}
 						<div className="flex gap-2">
-							<Dialog.Close render={(props) => <Button {...props} variant="secondary" size="sm">{t("Cancel", "取消")}</Button>} />
-							<Button type="submit" variant="primary" size="sm" loading={isSaving}>{enabled ? t("Reset password", "重设密码") : t("Set password", "设置密码")}</Button>
+							<Button type="button" variant="secondary" size="sm" disabled={busy} onClick={() => onOpenChange(false)}>{t("Cancel", "取消")}</Button>
+							<Button type="submit" variant="primary" size="sm" loading={isSaving} disabled={busy}>{enabled ? t("Reset password", "重设密码") : t("Set password", "设置密码")}</Button>
 						</div>
 					</div>
+					</fieldset>
 				</form>
 			</Dialog>
 		</Dialog.Root>

@@ -3,12 +3,11 @@
 //     https://opensource.org/licenses/Apache-2.0
 
 import { Button, Input, Tooltip } from "@cloudflare/kumo";
-import { GearSixIcon, ListIcon, MagnifyingGlassIcon, RobotIcon, XIcon } from "@phosphor-icons/react";
+import { ListIcon, MagnifyingGlassIcon, RobotIcon, XIcon } from "@phosphor-icons/react";
 import { type KeyboardEvent, useEffect, useState } from "react";
 import { useLocation, useNavigate, useParams, useSearchParams } from "react-router";
 import { useUIStore } from "~/hooks/useUIStore";
 import { useI18n } from "~/hooks/useI18n";
-import LanguageSelector from "~/components/LanguageSelector";
 
 export default function Header() {
 	const { t } = useI18n();
@@ -17,28 +16,31 @@ export default function Header() {
 	const { mailboxId } = useParams<{ mailboxId: string }>();
 	const navigate = useNavigate();
 	const location = useLocation();
+	const pathname = location.pathname.replace(/\/+$/, "");
+	const isContacts = pathname.endsWith("/contacts");
 	const [searchParams] = useSearchParams();
 	const { toggleSidebar, toggleAgentPanel, isAgentPanelOpen } = useUIStore();
 
 	// Sync search input with URL query param so it stays populated
 	const urlQuery = searchParams.get("q") || "";
 	useEffect(() => {
-		if (location.pathname.includes("/search") && urlQuery) {
-			setSearchQuery(urlQuery);
-		}
-	}, [urlQuery, location.pathname]);
+		setSearchQuery(isContacts || pathname.endsWith("/search") ? urlQuery : "");
+	}, [urlQuery, pathname, isContacts]);
 
 	const performSearch = () => {
-		if (mailboxId && searchQuery.trim()) {
+		if (isContacts || (mailboxId && searchQuery.trim())) {
 			const q = searchQuery.trim();
-			navigate(`/mailbox/${mailboxId}/search?q=${encodeURIComponent(q)}`);
+			const path = isContacts ? location.pathname : `/mailbox/${encodeURIComponent(mailboxId!)}/search`;
+			navigate(`${path}${q ? `?q=${encodeURIComponent(q)}` : ""}`);
 			setIsSearchExpanded(false);
 		}
 	};
 
 	const clearSearch = () => {
 		setSearchQuery("");
-		if (location.pathname.includes("/search") && mailboxId) {
+		if (isContacts) {
+			navigate(location.pathname);
+		} else if (location.pathname.includes("/search") && mailboxId) {
 			navigate(`/mailbox/${mailboxId}/emails/inbox`);
 		}
 	};
@@ -56,12 +58,10 @@ export default function Header() {
 		}
 	};
 
-	const isSettingsActive = location.pathname.includes("/settings");
-
 	return (
 		<header className="flex items-center gap-2 px-3 py-2.5 bg-kumo-base border-b border-kumo-line sticky top-0 z-10 md:px-5 md:gap-4">
 			{/* Hamburger menu - mobile only */}
-			<Button
+			{mailboxId && <Button
 				variant="ghost"
 				shape="square"
 				size="sm"
@@ -69,7 +69,7 @@ export default function Header() {
 				onClick={toggleSidebar}
 				aria-label={t("Toggle sidebar", "切换侧边栏")}
 				className="md:hidden shrink-0"
-			/>
+			/>}
 
 			{/* Search - full on desktop, collapsible on mobile */}
 			<div
@@ -80,8 +80,9 @@ export default function Header() {
 				<div className="flex-1 relative flex items-center">
 					<Input
 						className="w-full"
-						aria-label={t("Search emails", "搜索邮件")}
-						placeholder={t("Search emails... (try from:name, is:unread, has:attachment)", "搜索邮件…（可用 from:name、is:unread、has:attachment）")}
+						aria-label={isContacts ? t("Search contacts", "搜索联系人") : t("Search emails", "搜索邮件")}
+						placeholder={isContacts ? t("Search name, email, notes or introduction", "搜索姓名、邮箱、备注或介绍") : t("Search emails... (try from:name, is:unread, has:attachment)", "搜索邮件…（可用 from:name、is:unread、has:attachment）")}
+						maxLength={isContacts ? 200 : undefined}
 						value={searchQuery}
 						onChange={(e) => setSearchQuery(e.target.value)}
 						onKeyDown={handleKeyDown}
@@ -121,8 +122,7 @@ export default function Header() {
 				/>
 			)}
 
-			<div className="flex items-center gap-1 ml-auto shrink-0">
-				<div className={isSearchExpanded ? "hidden md:block" : ""}><LanguageSelector compact /></div>
+			{mailboxId && <div className="flex items-center gap-1 ml-auto shrink-0">
 				<Tooltip content={isAgentPanelOpen ? t("Hide agent panel", "隐藏助手面板") : t("Show agent panel", "显示助手面板")} side="bottom" asChild>
 					<Button
 						variant={isAgentPanelOpen ? "secondary" : "ghost"}
@@ -133,22 +133,7 @@ export default function Header() {
 						className="hidden lg:inline-flex"
 					/>
 				</Tooltip>
-				<Tooltip content={t("Settings", "设置")} side="bottom" asChild>
-					<Button
-						variant={isSettingsActive ? "secondary" : "ghost"}
-						shape="square"
-						icon={<GearSixIcon size={20} />}
-						onClick={() =>
-							navigate(
-								isSettingsActive
-									? `/mailbox/${mailboxId}/emails/inbox`
-									: `/mailbox/${mailboxId}/settings`,
-							)
-						}
-						aria-label={t("Settings", "设置")}
-					/>
-				</Tooltip>
-			</div>
+			</div>}
 		</header>
 	);
 }

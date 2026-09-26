@@ -17,6 +17,9 @@ import {
 import { SendEmailRequestSchema } from "./lib/schemas";
 import { handleReplyEmail, handleForwardEmail } from "./routes/reply-forward";
 import { contactRoutes } from "./routes/contacts";
+import { mailboxPasswordRoutes } from "./routes/mailbox-password";
+import { systemSettingsSchema } from "../shared/system-settings";
+import { getSystemSettings, SYSTEM_SETTINGS_KEY } from "./lib/system-settings";
 import { authStore } from "./auth";
 import { bodyLimit } from "hono/body-limit";
 import { Folders } from "../shared/folders";
@@ -41,8 +44,16 @@ function mailboxSettingsSchema(mailboxId: string) {
 	return z.object({
 		forwarding: forwardingSettingsSchema(mailboxId).optional(),
 		autoReply: autoReplySettingsSchema.optional(),
-		autoDraftRepliesEnabled: z.boolean().optional(),
-	}).passthrough();
+	}).passthrough().superRefine((settings, ctx) => {
+		for (const key of ["autoDraftRepliesEnabled", "agentSystemPrompt"]) {
+			if (Object.hasOwn(settings, key)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: [key], message: "AI 配置只能在系统设置中修改。" });
+		}
+	});
+}
+
+function publicMailboxSettings(settings: Record<string, unknown>) {
+	const { autoDraftRepliesEnabled, agentSystemPrompt, ...mailboxSettings } = settings;
+	return mailboxSettings;
 }
 
 const DraftBody = z.object({
@@ -108,6 +119,19 @@ app.use("/api/v1/mailboxes/:mailboxId/login", async (c, next) => {
 app.use("/api/v1/mailboxes/:mailboxId/login", bodyLimit({ maxSize: 2048 }));
 app.use("/api/v1/mailboxes/:mailboxId/*", requireMailbox);
 app.route("/api/v1/contacts", contactRoutes);
+app.route("/api/v1/mailboxes/:mailboxId/password", mailboxPasswordRoutes);
+
+app.use("/api/v1/settings", async (c, next) => {
+	if (c.var.identity.role !== "admin") return c.json({ error: "仅管理员可访问系统设置。" }, 403);
+	return next();
+});
+app.get("/api/v1/settings", async (c) => c.json(await getSystemSettings(c.env)));
+app.put("/api/v1/settings", async (c) => {
+	const body = systemSettingsSchema.safeParse(await c.req.json().catch(() => null));
+	if (!body.success) return c.json({ error: body.error.issues[0].message }, 400);
+	await c.env.BUCKET.put(SYSTEM_SETTINGS_KEY, JSON.stringify(body.data));
+	return c.json(body.data);
+});
 
 // -- Config ---------------------------------------------------------
 
@@ -141,7 +165,7 @@ app.post("/api/v1/mailboxes", async (c) => {
 	}
 	const key = `mailboxes/${email}.json`;
 	if (await c.env.BUCKET.head(key)) return c.json({ error: "Mailbox already exists" }, 409);
-	const defaultSettings = { fromName: name, forwarding: { enabled: false, email: "" }, signature: { enabled: false, text: "" }, autoReply: { enabled: false, subject: "", message: "" }, autoDraftRepliesEnabled: false };
+	const defaultSettings = { fromName: name, forwarding: { enabled: false, email: "" }, signature: { enabled: false, text: "" }, autoReply: { enabled: false, subject: "", message: "" } };
 	const finalSettings = { ...defaultSettings, ...parsedSettings.data };
 	await c.env.BUCKET.put(key, JSON.stringify(finalSettings));
 	const stub = c.env.MAILBOX.get(c.env.MAILBOX.idFromName(email));
@@ -153,7 +177,7 @@ app.get("/api/v1/mailboxes/:mailboxId", async (c) => {
 	const mailboxId = c.req.param("mailboxId")!;
 	const obj = await c.env.BUCKET.get(`mailboxes/${mailboxId}.json`);
 	if (!obj) return c.json({ error: "Not found" }, 404);
-	return c.json({ id: mailboxId, name: mailboxId, email: mailboxId, settings: await obj.json() });
+	return c.json({ id: mailboxId, name: mailboxId, email: mailboxId, settings: publicMailboxSettings(await obj.json<Record<string, unknown>>()) });
 });
 
 app.put("/api/v1/mailboxes/:mailboxId", async (c) => {
@@ -166,7 +190,7 @@ app.put("/api/v1/mailboxes/:mailboxId", async (c) => {
 	// Partial updates must not erase unrelated settings saved by older clients.
 	const settings = { ...await existing.json<Record<string, unknown>>(), ...body.data.settings };
 	await c.env.BUCKET.put(key, JSON.stringify(settings));
-	return c.json({ id: mailboxId, name: mailboxId, email: mailboxId, settings });
+	return c.json({ id: mailboxId, name: mailboxId, email: mailboxId, settings: publicMailboxSettings(settings) });
 });
 
 app.delete("/api/v1/mailboxes/:mailboxId", async (c) => {
@@ -470,12 +494,11 @@ async function receiveEmail(event: ForwardableEmailMessage, env: Env, ctx: Execu
 	} satisfies EmailFull;
 	await stub.createEmail(Folders.INBOX, incoming, attachmentData);
 
-	// Automatic replies are opt-in. Missing settings (including existing mailboxes)
-	// must never trigger a fixed reply or AI draft unexpectedly.
+	// Fixed replies remain mailbox-specific; AI drafts require an explicit global opt-in.
 	try {
 		const settingsObject = await env.BUCKET.get(`mailboxes/${mailboxId}.json`);
 		const settings = settingsObject
-			? await settingsObject.json<{ autoDraftRepliesEnabled?: boolean; autoReply?: unknown; fromName?: unknown; forwarding?: unknown }>()
+			? await settingsObject.json<{ autoReply?: unknown; fromName?: unknown; forwarding?: unknown }>()
 			: null;
 		if (settings) ctx.waitUntil(processAutomaticReplies(env, mailboxId, settings, event, incoming, rawEmail));
 		// Forward only after storing the Inbox copy; missing or invalid legacy settings stay disabled.

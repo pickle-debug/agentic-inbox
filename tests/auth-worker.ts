@@ -16,6 +16,12 @@ export { MailboxDO } from "../workers/durableObject";
 export { ContactsStore } from "../workers/contacts/store";
 import { EmailAgent as ProductionAgent } from "../workers/agent";
 export class EmailAgent extends ProductionAgent {
+	#failDisconnect = false;
+	setDisconnectFailure(enabled: boolean) { this.#failDisconnect = enabled; }
+	override disconnectClients() {
+		if (this.#failDisconnect) throw new Error("Simulated disconnect failure");
+		return super.disconnectClients();
+	}
 	emitTestUpdate() { this.broadcast("test-update"); }
 	connectionStates() { return [...this.getConnections()].map(c => c.readyState); }
 }

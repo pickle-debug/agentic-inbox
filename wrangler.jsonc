@@ -14,7 +14,7 @@
 		// TEAM_DOMAIN may be the base Access URL or the full /cdn-cgi/access/certs URL.
 		// Access authenticates administrators; mailbox sessions authenticate internal users.
 		// Single-site setup: protect /auth/admin/session with Access; set ADMIN_ORIGIN to the site origin.
-		"DOMAINS": "example.com",
+		"DOMAINS": "ordoeden.com,vibeapi.cc",
 		"EMAIL_ADDRESSES": []
 	},
 	"send_email": [

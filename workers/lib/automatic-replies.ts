@@ -6,8 +6,9 @@ import { sendEmail } from "../email-sender";
 import type { Env } from "../types";
 import type { EmailFull } from "./schemas";
 import { buildThreadingHeaders, generateMessageId, getMailboxStub, textToHtml } from "./email-helpers";
+import { getSystemSettings } from "./system-settings";
 
-type ReplySettings = { autoReply?: unknown; autoDraftRepliesEnabled?: unknown; fromName?: unknown };
+type ReplySettings = { autoReply?: unknown; fromName?: unknown };
 
 function automaticReplyRecipient(event: ForwardableEmailMessage, original: EmailFull, mailboxId: string): string | null {
 	// RFC 3834: acknowledge the envelope sender, never an arbitrary Reply-To or CC address.
@@ -85,7 +86,7 @@ export async function processAutomaticReplies(env: Env, mailboxId: string, setti
 	const fixedReply = sendAutomaticReply(env, mailboxId, settings, event, original, raw)
 		.catch(error => console.error("Automatic reply failed:", error instanceof Error ? error.message : "Unknown error"));
 	const draftReply = (async () => {
-		if (settings.autoDraftRepliesEnabled !== true) return;
+		if (!(await getSystemSettings(env)).autoDraftRepliesEnabled) return;
 		const agent = await getAgentByName(env.EMAIL_AGENT, mailboxId);
 		const response = await agent.fetch(new Request("https://agents/onNewEmail", {
 			method: "POST", headers: { "Content-Type": "application/json" },

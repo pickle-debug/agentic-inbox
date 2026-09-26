@@ -9,6 +9,7 @@ import {
 	CaretLeftIcon,
 	FileIcon,
 	FolderIcon,
+	GearSixIcon,
 	PaperPlaneTiltIcon,
 	PencilSimpleIcon,
 	PlusIcon,
@@ -18,7 +19,7 @@ import {
 } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
-import { NavLink, useNavigate, useParams } from "react-router";
+import { NavLink, useLocation, useNavigate, useParams } from "react-router";
 import { Folders, SYSTEM_FOLDER_IDS } from "shared/folders";
 import { useCreateFolder, useFolders } from "~/queries/folders";
 import { useMailbox } from "~/queries/mailboxes";
@@ -82,9 +83,10 @@ export default function Sidebar() {
 	const { t, message, folderName } = useI18n();
 	const { mailboxId } = useParams<{ mailboxId: string }>();
 	const navigate = useNavigate();
+	const { pathname } = useLocation();
 	const { data: folders = [] } = useFolders(mailboxId);
 	const createFolderMutation = useCreateFolder();
-	const { startCompose, closeSidebar } = useUIStore();
+	const { startCompose, openComposeModal, closeSidebar } = useUIStore();
 	const { data: currentMailbox } = useMailbox(mailboxId);
 	const [isCreateFolderOpen, setIsCreateFolderOpen] = useState(false);
 	const [newFolderName, setNewFolderName] = useState("");
@@ -180,7 +182,11 @@ export default function Sidebar() {
 				<Button
 					variant="primary"
 					icon={<PencilSimpleIcon size={16} />}
-					onClick={() => startCompose()}
+					onClick={() => {
+						if (pathname.includes("/emails/") || pathname.replace(/\/+$/, "").endsWith("/search")) startCompose();
+						else openComposeModal();
+						closeSidebar();
+					}}
 					className="w-full"
 				>
 					{t("Compose", "写邮件")}
@@ -189,7 +195,7 @@ export default function Sidebar() {
 
 			{/* Navigation */}
 			<nav className="flex-1 overflow-y-auto px-2 space-y-0.5">
-				{session?.role === "admin" && <FolderLink to="/contacts" icon={<AddressBookIcon size={18} />} label={t("Contacts", "联系人")} onClick={handleNavClick} />}
+				{session?.role === "admin" && <FolderLink to={`/mailbox/${encodeURIComponent(mailboxId!)}/contacts`} icon={<AddressBookIcon size={18} />} label={t("Contacts", "联系人")} onClick={handleNavClick} />}
 				{SYSTEM_FOLDER_LINKS.map((folder) => (
 					<FolderLink
 						key={folder.id}
@@ -253,6 +259,9 @@ export default function Sidebar() {
 					</div>
 				)}
 			</nav>
+			<div className="shrink-0 border-t border-kumo-line p-2">
+				<FolderLink to={`/mailbox/${encodeURIComponent(mailboxId!)}/settings`} icon={<GearSixIcon size={18} />} label={t("Mailbox settings", "邮箱设置")} onClick={handleNavClick} />
+			</div>
 
 			{/* Create folder dialog */}
 			<Dialog.Root

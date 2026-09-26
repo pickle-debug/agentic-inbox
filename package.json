@@ -25,6 +25,7 @@
 		"preview": "npm run build && vite preview",
 		"typecheck": "npm run cf-typegen && react-router typegen && tsc -b",
 		"test:auth": "node tests/auth.test.mjs",
+		"test:system-settings": "node tests/system-settings.test.mjs && node tests/settings-ui.test.mjs",
 		"test:i18n": "node tests/i18n.test.mjs",
 		"test:forwarding": "node tests/forwarding.test.mjs",
 		"test:automatic-replies": "node tests/automatic-replies.test.mjs",

@@ -38,7 +38,7 @@ export class AuthStore extends DurableObject<Env> {
 		});
 		return { enabled: false };
 	}
-	login(email: string, password: string, ip: string) {
+	#verifyPassword(email: string, password: string, ip: string): { error: "limited" | "invalid" } | { ok: true } {
 		const now = Date.now();
 		this.ctx.storage.sql.exec("DELETE FROM attempts WHERE expires <= ?", now);
 		this.ctx.storage.sql.exec("DELETE FROM sessions WHERE expires <= ?", now);
@@ -54,9 +54,20 @@ export class AuthStore extends DurableObject<Env> {
 		const candidate = derive(password, record?.salt ?? "00000000000000000000000000000000");
 		const matches = timingSafeEqual(candidate, Buffer.from(record?.digest ?? "00".repeat(32), "hex"));
 		if (!record || !matches) return { error: "invalid" as const };
+		return { ok: true as const };
+	}
+	login(email: string, password: string, ip: string) {
+		const result = this.#verifyPassword(email, password, ip);
+		if ("error" in result) return result;
 		const token = randomBytes(32).toString("hex");
-		this.ctx.storage.sql.exec("INSERT INTO sessions VALUES (?, ?, ?, ?)", hash(token), email, now + SESSION_MS, "mailbox");
+		this.ctx.storage.sql.exec("INSERT INTO sessions VALUES (?, ?, ?, ?)", hash(token), email, Date.now() + SESSION_MS, "mailbox");
 		return { token, maxAge: SESSION_MS / 1000 };
+	}
+	changePassword(email: string, currentPassword: string, password: string, ip: string) {
+		const result = this.#verifyPassword(email, currentPassword, ip);
+		if ("error" in result) return result;
+		this.setPassword(email, password);
+		return { ok: true as const };
 	}
 	session(token: string) {
 		if (!/^[a-f0-9]{64}$/.test(token)) return null;

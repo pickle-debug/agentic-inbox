@@ -10,11 +10,13 @@ import {
 
 export default [
 	route("login", "routes/login.tsx"),
-	route("contacts", "routes/contacts.tsx"),
+	route("contacts", "routes/contacts-index.tsx"),
+	route("settings", "routes/system-settings.tsx"),
 	index("routes/home.tsx"),
 	route("mailbox/:mailboxId", "routes/mailbox.tsx", [
 		index("routes/mailbox-index.tsx"),
 		route("emails/:folder", "routes/email-list.tsx"),
+		route("contacts", "routes/contacts.tsx"),
 		route("settings", "routes/settings.tsx"),
 		route("search", "routes/search-results.tsx"),
 	]),

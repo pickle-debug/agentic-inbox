@@ -26,6 +26,8 @@ export default function MailboxRoute() {
 		closeComposeModal,
 	} = useUIStore();
 
+	useEffect(() => () => closeSidebar(), [closeSidebar]);
+
 	useEffect(() => {
 		if (
 			prevMailboxIdRef.current &&
@@ -41,11 +43,11 @@ export default function MailboxRoute() {
 	}, [mailboxId, closeComposeModal, closePanel, closeSidebar]);
 
 	return (
-		<div className="flex h-screen overflow-hidden">
+		<div className="flex h-[calc(100dvh-3.5rem)] overflow-hidden">
 			{/* Mobile sidebar overlay backdrop */}
 			{isSidebarOpen && (
 				<div
-					className="fixed inset-0 z-30 bg-black/30 md:hidden"
+					className="fixed inset-x-0 bottom-0 top-14 z-30 bg-black/30 md:hidden"
 					onClick={closeSidebar}
 					onKeyDown={(e) => e.key === "Escape" && closeSidebar()}
 					role="button"
@@ -56,7 +58,7 @@ export default function MailboxRoute() {
 
 			{/* Sidebar: hidden on mobile by default, shown as overlay when open */}
 			<div
-				className={`fixed inset-y-0 left-0 z-40 w-64 transform transition-transform duration-200 ease-in-out md:relative md:translate-x-0 md:z-0 ${
+				className={`fixed bottom-0 top-14 left-0 z-40 w-64 transform transition-transform duration-200 ease-in-out md:relative md:top-auto md:bottom-auto md:translate-x-0 md:z-0 ${
 					isSidebarOpen ? "translate-x-0" : "-translate-x-full"
 				}`}
 			>

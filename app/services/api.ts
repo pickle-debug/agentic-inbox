@@ -4,6 +4,7 @@
 
 import type { Email, Folder, Mailbox } from "~/types";
 import type { Contact, ContactInput, ContactList } from "../../shared/contacts";
+import type { SystemSettings } from "../../shared/system-settings";
 
 const REQUEST_TIMEOUT_MS = 30_000;
 
@@ -22,6 +23,7 @@ export class ApiError extends Error {
 async function request<T>(
 	url: string,
 	options: RequestInit = {},
+	{ redirectOnUnauthorized = true }: { redirectOnUnauthorized?: boolean } = {},
 ): Promise<T> {
 	const controller = new AbortController();
 	const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
@@ -41,7 +43,7 @@ async function request<T>(
 			},
 		});
 
-		if (res.status === 401 && url !== "/auth/login" && typeof window !== "undefined") window.location.assign("/login");
+		if (res.status === 401 && redirectOnUnauthorized && url !== "/auth/login" && typeof window !== "undefined") window.location.assign("/login");
 		if (!res.ok) {
 			const body = await res.json().catch(() => ({}));
 			throw new ApiError(res.status, body as Record<string, unknown>);
@@ -98,6 +100,12 @@ interface EmailListResponse {
 
 const api = {
 	getSession: () => get<{ role: "admin" | "mailbox"; email: string }>("/auth/session"),
+	getSystemSettings: () => get<SystemSettings>("/api/v1/settings"),
+	updateSystemSettings: (settings: SystemSettings) => put<SystemSettings>("/api/v1/settings", settings),
+	changeMailboxPassword: (id: string, currentPassword: string, password: string) => request<{ ok: boolean }>(`/api/v1/mailboxes/${encodeURIComponent(id)}/password`, {
+		method: "POST",
+		body: JSON.stringify({ currentPassword, password }),
+	}, { redirectOnUnauthorized: false }),
 	getLoginConfig: () => get<{ adminLoginUrl: string | null }>("/auth/config"),
 	login: (email: string, password: string) => post<{ role: "mailbox"; email: string }>("/auth/login", { email, password }),
 	logout: () => post<{ redirect: string }>("/auth/logout"),

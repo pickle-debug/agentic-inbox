@@ -2,16 +2,15 @@
 // Licensed under the Apache 2.0 license found in the LICENSE file or at:
 //     https://opensource.org/licenses/Apache-2.0
 
-import { Button, Dialog, Input, Loader, useKumoToastManager } from "@cloudflare/kumo";
-import { ArrowLeftIcon, PlusIcon } from "@phosphor-icons/react";
+import { Button, Dialog, Input, Loader, Tooltip, useKumoToastManager } from "@cloudflare/kumo";
+import { AddressBookIcon, ArrowsClockwiseIcon, PlusIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import { type FormEvent, useEffect, useState } from "react";
-import { Navigate, useNavigate } from "react-router";
+import { Navigate, useSearchParams } from "react-router";
 import { contactInputSchema, type Contact, type ContactInput } from "shared/contacts";
 import { useContacts, useCreateContact, useDeleteContact, useUpdateContact } from "~/queries/contacts";
 import api from "~/services/api";
 import { useI18n } from "~/hooks/useI18n";
-import LanguageSelector from "~/components/LanguageSelector";
 
 const PAGE_SIZE = 30;
 const EMPTY_CONTACT: ContactInput = { name: "", email: "", notes: "", introduction: "" };
@@ -23,13 +22,15 @@ export function meta() {
 export default function ContactsRoute() {
 	const { t, message } = useI18n();
 	useEffect(() => { document.title = `${t("Contacts", "系统联系人")} · Agentic Inbox`; }, [t]);
-	const navigate = useNavigate();
+	const [searchParams, setSearchParams] = useSearchParams();
 	const toast = useKumoToastManager();
 	const session = useQuery({ queryKey: ["session"], queryFn: api.getSession });
 	const isAdmin = session.data?.role === "admin";
-	const [search, setSearch] = useState("");
-	const [query, setQuery] = useState("");
-	const [page, setPage] = useState(1);
+	const query = (searchParams.get("q") || "").trim();
+	const [pagination, setPagination] = useState({ query, page: 1 });
+	// Start a changed search on page one before the query runs.
+	const page = pagination.query === query ? pagination.page : 1;
+	const setPage = (nextPage: number) => setPagination({ query, page: nextPage });
 	const contacts = useContacts(query, page, PAGE_SIZE, isAdmin);
 	const createContact = useCreateContact();
 	const updateContact = useUpdateContact();
@@ -46,17 +47,19 @@ export default function ContactsRoute() {
 	const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
 	useEffect(() => {
-		const timer = setTimeout(() => {
-			setQuery(search.trim());
-			setPage(1);
-		}, 250);
-		return () => clearTimeout(timer);
-	}, [search]);
+		setPagination({ query, page: 1 });
+	}, [query]);
 
 	useEffect(() => {
 		// Deleting the last result on a page must not strand the user on an empty page.
 		if (contacts.data && !contacts.isFetching && page > pages) setPage(pages);
-	}, [contacts.data, contacts.isFetching, page, pages]);
+	}, [contacts.data, contacts.isFetching, page, pages, query]);
+
+	const clearSearch = () => {
+		const next = new URLSearchParams(searchParams);
+		next.delete("q");
+		setSearchParams(next);
+	};
 
 	const openEditor = (contact?: Contact) => {
 		setEditingId(contact?.id ?? null);
@@ -98,43 +101,43 @@ export default function ContactsRoute() {
 	};
 
 	if (session.isError) {
-		return <main className="min-h-screen flex flex-col items-center justify-center gap-4 p-6">
+		return <div className="h-full min-h-0 flex flex-col items-center justify-center gap-4 bg-kumo-base p-6">
 			<p role="alert" className="text-kumo-danger">{t("Unable to load login status. Please try again.", "无法读取登录状态，请重试。")}</p>
-			<Button onClick={() => session.refetch()}>{t("Retry", "重试")}</Button>
-			<Button variant="secondary" onClick={() => navigate("/")}>{t("Back to mailboxes", "返回邮箱")}</Button>
-		</main>;
+			<Button size="sm" onClick={() => session.refetch()} loading={session.isFetching} disabled={session.isFetching}>{t("Retry", "重试")}</Button>
+		</div>;
 	}
 	if (!session.data) {
-		return <main className="min-h-screen flex items-center justify-center" aria-label={t("Loading login status", "加载登录状态")}><Loader size="lg" /></main>;
+		return <div className="h-full min-h-0 flex items-center justify-center bg-kumo-base" role="status" aria-label={t("Loading login status", "加载登录状态")}><Loader size="lg" /></div>;
 	}
 	// A bookmarked directory URL must not expose administrator contacts to a mailbox user.
 	if (!isAdmin) return <Navigate to="/" replace />;
 
 	return (
-		<main className="min-h-screen bg-kumo-recessed text-kumo-default">
-			<div className="mx-auto max-w-4xl px-4 py-6 md:px-6 md:py-10">
-				<div className="flex flex-wrap items-center justify-between gap-3"><Button variant="ghost" size="sm" icon={<ArrowLeftIcon size={16} />} onClick={() => navigate("/")}>{t("Back to mailboxes", "返回邮箱")}</Button><LanguageSelector compact /></div>
-				<header className="mt-6 mb-6 flex flex-wrap items-start justify-between gap-4">
-					<div className="min-w-0 flex-1">
-						<h1 className="text-2xl font-semibold">{t("System contacts", "系统联系人")}</h1>
-						<p className="mt-2 text-sm text-kumo-subtle">{t("Visible only to administrators. Search and use these contacts in any mailbox.", "仅管理员可见，可在操作任意子邮箱时搜索和使用。")}</p>
+		<div className="h-full min-h-0 flex flex-col bg-kumo-base text-kumo-default">
+				<header className="flex flex-wrap items-center justify-between gap-2 px-4 py-3.5 border-b border-kumo-line shrink-0 md:px-5">
+					<h1 className="text-lg font-semibold">{t("System contacts", "系统联系人")}</h1>
+					<div className="flex items-center gap-1">
+						{contacts.data && !contacts.isError && <span className="mr-2 hidden text-sm text-kumo-subtle sm:inline" aria-live="polite">{t(`${total} contacts`, `${total} 位联系人`)}</span>}
+						<Tooltip content={contacts.isFetching ? t("Refreshing...", "正在刷新…") : t("Refresh", "刷新")} side="bottom" asChild>
+							<Button variant="ghost" shape="square" size="sm" icon={<ArrowsClockwiseIcon size={18} aria-hidden="true" className={contacts.isFetching ? "animate-spin" : ""} />} onClick={() => void contacts.refetch()} disabled={contacts.isFetching} aria-label={t("Refresh", "刷新")} />
+						</Tooltip>
+						<Button variant="primary" size="sm" icon={<PlusIcon size={16} />} onClick={() => openEditor()}>{t("New contact", "新建联系人")}</Button>
 					</div>
-					{isAdmin && <Button variant="primary" icon={<PlusIcon size={16} />} onClick={() => openEditor()}>{t("New contact", "新建联系人")}</Button>}
 				</header>
-				<Input label={t("Search contacts", "搜索联系人")} type="search" placeholder={t("Search name, email, notes or introduction", "搜索姓名、邮箱、备注或介绍")} maxLength={200} value={search} onChange={event => setSearch(event.target.value)} />
-				<section aria-label={t("Contact list", "联系人列表")} aria-busy={contacts.isFetching} className="mt-5 border-y border-kumo-line bg-kumo-base">
-					{contacts.isError ? <div className="py-12 px-4 text-center space-y-4">
+				<section aria-label={t("Contact list", "联系人列表")} aria-busy={contacts.isFetching} className="min-h-0 flex-1 overflow-y-auto">
+					{contacts.isError ? <div className="p-4 space-y-3">
 						<p role="alert" className="text-sm text-kumo-danger">{contacts.error instanceof Error ? message(contacts.error.message) : t("Failed to load contacts. Please try again.", "联系人加载失败，请重试。")}</p>
-						<Button onClick={() => contacts.refetch()}>{t("Retry", "重试")}</Button>
-					</div> : contacts.isPending ? <div className="flex justify-center py-16" aria-label={t("Loading contacts", "加载联系人")}><Loader /></div> : !contacts.data?.contacts.length ? <div className="py-14 px-4 text-center">
-						<p className="font-medium">{query ? t("No matching contacts", "没有找到匹配的联系人") : t("No contacts yet", "暂无联系人")}</p>
-						<p className="mt-2 text-sm text-kumo-subtle">{query ? t("Try other keywords or clear your search.", "试试其他关键词，或清空搜索。") : t("Create contacts so administrators can find them when composing in any mailbox.", "创建联系人后，管理员可在任意子邮箱写信时搜索使用。")}</p>
-						{query && <Button variant="secondary" className="mt-4" onClick={() => setSearch("")}>{t("Clear search", "清空搜索")}</Button>}
-					</div> : <ul className="divide-y divide-kumo-line">
+						<Button size="sm" variant="secondary" onClick={() => contacts.refetch()} loading={contacts.isFetching} disabled={contacts.isFetching}>{t("Retry", "重试")}</Button>
+					</div> : contacts.isPending ? <div className="flex justify-center py-16" role="status" aria-label={t("Loading contacts", "加载联系人")}><Loader /></div> : !contacts.data?.contacts.length ? <div className="flex flex-col items-center justify-center py-24 px-6 text-center">
+						<AddressBookIcon size={48} weight="thin" aria-hidden="true" className="mb-4 text-kumo-subtle" />
+						<h2 className="mb-1.5 text-base font-semibold">{query ? t("No matching contacts", "没有找到匹配的联系人") : t("No contacts yet", "暂无联系人")}</h2>
+						<p className="mb-5 max-w-xs text-sm text-kumo-subtle">{query ? t("Try other keywords or clear your search.", "试试其他关键词，或清空搜索。") : t("Create contacts so administrators can find them when composing in any mailbox.", "创建联系人后，管理员可在任意子邮箱写信时搜索使用。")}</p>
+						{query ? <Button variant="primary" size="sm" onClick={clearSearch}>{t("Clear search", "清空搜索")}</Button> : <Button variant="primary" size="sm" icon={<PlusIcon size={16} />} onClick={() => openEditor()}>{t("New contact", "新建联系人")}</Button>}
+					</div> : <ul>
 						{contacts.data.contacts.map(contact => <li key={contact.id}>
-							<button type="button" onClick={() => setDetail(contact)} className="w-full cursor-pointer px-4 py-4 text-left transition-colors hover:bg-kumo-tint focus-visible:outline-2 focus-visible:outline-kumo-ring focus-visible:-outline-offset-2">
+							<button type="button" onClick={() => setDetail(contact)} className="w-full cursor-pointer border-b border-kumo-line px-4 py-2.5 text-left transition-colors hover:bg-kumo-tint focus-visible:outline-2 focus-visible:outline-kumo-ring focus-visible:-outline-offset-2 md:px-6 md:py-3">
 								<div className="flex flex-col gap-1 sm:flex-row sm:items-baseline sm:gap-4">
-									<span className="font-medium break-words sm:w-48 sm:shrink-0">{contact.name}</span>
+									<span className="text-sm font-medium break-words sm:w-48 sm:shrink-0">{contact.name}</span>
 									<span className="min-w-0 break-all text-sm text-kumo-subtle">{contact.email}</span>
 								</div>
 								{(contact.notes || contact.introduction) && <p className="mt-2 line-clamp-2 break-words text-sm text-kumo-subtle">{contact.notes || contact.introduction}</p>}
@@ -142,14 +145,13 @@ export default function ContactsRoute() {
 						</li>)}
 					</ul>}
 				</section>
-				{contacts.data && !contacts.isError && <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-					<p className="text-sm text-kumo-subtle" aria-live="polite">{t(`${total} contacts · Page ${page} / ${pages}`, `共 ${total} 位联系人 · 第 ${page} / ${pages} 页`)}</p>
-					<div className="flex gap-2">
-						<Button variant="secondary" size="sm" disabled={page <= 1 || contacts.isFetching} onClick={() => setPage(value => value - 1)}>{t("Previous", "上一页")}</Button>
-						<Button variant="secondary" size="sm" disabled={page >= pages || contacts.isFetching} onClick={() => setPage(value => value + 1)}>{t("Next", "下一页")}</Button>
-					</div>
-				</div>}
-			</div>
+				{contacts.data && !contacts.isError && total > PAGE_SIZE && <nav aria-label={t("Pagination", "分页")} className="flex shrink-0 flex-wrap items-center justify-center gap-2 border-t border-kumo-line py-3">
+					<Button variant="ghost" size="sm" disabled={page <= 1 || contacts.isFetching} onClick={() => setPage(1)}>{t("First", "首页")}</Button>
+					<Button variant="ghost" size="sm" disabled={page <= 1 || contacts.isFetching} onClick={() => setPage(page - 1)}>{t("Previous", "上一页")}</Button>
+					<span className="text-sm text-kumo-subtle" aria-live="polite">{t(`Page ${page} of ${pages}`, `第 ${page} / ${pages} 页`)}</span>
+					<Button variant="ghost" size="sm" disabled={page >= pages || contacts.isFetching} onClick={() => setPage(page + 1)}>{t("Next", "下一页")}</Button>
+					<Button variant="ghost" size="sm" disabled={page >= pages || contacts.isFetching} onClick={() => setPage(pages)}>{t("Last", "末页")}</Button>
+				</nav>}
 
 			<Dialog.Root open={!!detail} onOpenChange={open => { if (!open) setDetail(null); }}>
 				<Dialog size="sm" className="max-h-[90dvh] overflow-y-auto p-6">
@@ -206,6 +208,6 @@ export default function ContactsRoute() {
 					</div>
 				</Dialog>
 			</Dialog.Root>
-		</main>
+		</div>
 	);
 }
