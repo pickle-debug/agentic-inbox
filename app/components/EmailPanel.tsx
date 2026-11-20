@@ -2,6 +2,7 @@
 // Licensed under the Apache 2.0 license found in the LICENSE file or at:
 //     https://opensource.org/licenses/Apache-2.0
 
+import { usePermissions } from "~/hooks/usePermissions";
 import { useI18n } from "~/hooks/useI18n";
 import { Banner, Button, useKumoToastManager } from "@cloudflare/kumo";
 import { useEffect, useMemo, useState } from "react";
@@ -37,6 +38,7 @@ function EmailPanelSkeleton() {
 
 export default function EmailPanel({ emailId }: { emailId: string }) {
 	const { t, message: localizeMessage } = useI18n();
+	const {writable, deletable} = usePermissions();
 	const { mailboxId, folder } = useParams<{ mailboxId: string; folder: string }>();
 	const { data: email, isError, refetch } = useEmail(mailboxId, emailId);
 	const { data: threadRepliesRaw } = useThreadReplies(mailboxId, email?.thread_id) as {
@@ -148,8 +150,8 @@ export default function EmailPanel({ emailId }: { emailId: string }) {
 				attachments,
 			};
 			if (originalEmail) await replyMut.mutateAsync({ mailboxId, emailId: originalEmail.id, email: emailData }); else await sendEmailMut.mutateAsync({ mailboxId, email: emailData });
-			await deleteEmailMut.mutateAsync({ mailboxId, id: target.id });
-			toastManager.add({ title: t("Email sent!", "邮件已发送！") });
+			if (deletable) await deleteEmailMut.mutateAsync({ mailboxId, id: target.id });
+			toastManager.add({ title: !deletable ? t("Email sent. The original draft is retained with your current permissions.", "邮件已发送，当前权限保留原草稿。") : t("Email sent!", "邮件已发送！") });
 			if (isDraftFolder) closePanel();
 		} catch (err) {
 			const message = (err instanceof Error ? localizeMessage(err.message) : null) || t("Failed to send email.", "邮件发送失败。");
@@ -162,6 +164,8 @@ export default function EmailPanel({ emailId }: { emailId: string }) {
 	return (
 		<div className="flex flex-col h-full">
 			<EmailPanelToolbar
+				writable={writable}
+				deletable={deletable}
 				email={email}
 				mailboxId={mailboxId}
 				isDraftFolder={isDraftFolder}
@@ -218,9 +222,9 @@ export default function EmailPanel({ emailId }: { emailId: string }) {
 								isSending={isDraft ? isSending : false}
 								isExpanded={expandedMessages.has(msg.id)}
 								onToggleExpand={() => toggleExpand(msg.id)}
-								onSendDraft={isDraft ? () => handleSendDraft(msg) : undefined}
-								onEditDraft={isDraft ? () => handleEditDraft(msg) : undefined}
-								onDeleteDraft={isDraft ? () => handleDeleteDraft(msg) : undefined}
+								onSendDraft={isDraft && writable ? () => handleSendDraft(msg) : undefined}
+								onEditDraft={isDraft && writable ? () => handleEditDraft(msg) : undefined}
+								onDeleteDraft={isDraft && deletable ? () => handleDeleteDraft(msg) : undefined}
 								onViewSource={() => setSourceViewEmail(msg)}
 								onPreviewImage={(url, filename) =>
 									setPreviewImage({ url, filename })

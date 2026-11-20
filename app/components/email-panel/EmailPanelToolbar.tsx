@@ -23,6 +23,8 @@ import {
 import type { Folder, Email } from "~/types";
 
 interface EmailPanelToolbarProps {
+	writable?: boolean;
+	deletable?: boolean;
 	email: Email;
 	mailboxId?: string;
 	isDraftFolder: boolean;
@@ -43,6 +45,8 @@ interface EmailPanelToolbarProps {
 }
 
 export default function EmailPanelToolbar({
+	writable = true,
+	deletable = true,
 	email,
 	mailboxId,
 	isDraftFolder,
@@ -73,6 +77,7 @@ export default function EmailPanelToolbar({
 				className="md:hidden shrink-0"
 			/>
 
+			{writable && <>
 			{isDraftFolder ? (
 				<>
 					<Button
@@ -158,7 +163,8 @@ export default function EmailPanelToolbar({
 				/>
 			</Tooltip>
 
-			<MoveToFolderMenu folders={moveToFolders} onMove={onMove} />
+			<MoveToFolderMenu folders={deletable ? moveToFolders : moveToFolders.filter(folder => folder.id !== "trash")} onMove={onMove} />
+			</>}
 
 			<div className="ml-auto flex items-center gap-0.5">
 				<Tooltip content={t("View source", "查看原始邮件")} side="bottom" asChild>
@@ -171,7 +177,7 @@ export default function EmailPanelToolbar({
 						aria-label={t("View source", "查看原始邮件")}
 					/>
 				</Tooltip>
-				<Tooltip content={t("Delete", "删除")} side="bottom" asChild>
+				{deletable && <Tooltip content={t("Delete", "删除")} side="bottom" asChild>
 					<Button
 						variant="ghost"
 						shape="square"
@@ -180,7 +186,7 @@ export default function EmailPanelToolbar({
 						onClick={onDelete}
 						aria-label={t("Delete", "删除")}
 					/>
-				</Tooltip>
+				</Tooltip>}
 				<Tooltip content={t("Close", "关闭")} side="bottom" asChild>
 					<Button
 						variant="ghost"

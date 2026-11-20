@@ -37,11 +37,18 @@ export function getMailboxStub(
 export async function listMailboxes(
 	bucket: R2Bucket,
 ): Promise<{ id: string; email: string }[]> {
-	const list = await bucket.list({ prefix: "mailboxes/" });
-	return list.objects.map((obj) => {
-		const id = obj.key.replace("mailboxes/", "").replace(".json", "");
-		return { id, email: id };
-	});
+	const result: {id: string; email: string}[] = [];
+	let cursor: string | undefined;
+	do {
+		const list = await bucket.list({prefix: "mailboxes/", cursor});
+		for (const obj of list.objects) {
+			if (!obj.key.endsWith(".json")) continue;
+			const id = obj.key.slice("mailboxes/".length, -5);
+			result.push({id, email: id});
+		}
+		cursor = list.truncated ? list.cursor : undefined;
+	} while (cursor);
+	return result;
 }
 
 // ── Sender Validation ──────────────────────────────────────────────

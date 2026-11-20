@@ -7,10 +7,12 @@ import { ListIcon, MagnifyingGlassIcon, RobotIcon, XIcon } from "@phosphor-icons
 import { type KeyboardEvent, useEffect, useState } from "react";
 import { useLocation, useNavigate, useParams, useSearchParams } from "react-router";
 import { useUIStore } from "~/hooks/useUIStore";
+import { usePermissions } from "~/hooks/usePermissions";
 import { useI18n } from "~/hooks/useI18n";
 
 export default function Header() {
 	const { t } = useI18n();
+	const {identity, shared} = usePermissions();
 	const [searchQuery, setSearchQuery] = useState("");
 	const [isSearchExpanded, setIsSearchExpanded] = useState(false);
 	const { mailboxId } = useParams<{ mailboxId: string }>();
@@ -128,7 +130,8 @@ export default function Header() {
 						variant={isAgentPanelOpen ? "secondary" : "ghost"}
 						shape="square"
 						icon={<RobotIcon size={20} />}
-						onClick={toggleAgentPanel}
+						disabled={!identity || shared}
+					onClick={toggleAgentPanel}
 						aria-label={t("Toggle agent panel", "切换助手面板")}
 						className="hidden lg:inline-flex"
 					/>

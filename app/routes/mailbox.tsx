@@ -10,10 +10,12 @@ import Header from "~/components/Header";
 import Sidebar from "~/components/Sidebar";
 import { useMailbox } from "~/queries/mailboxes";
 import { useUIStore } from "~/hooks/useUIStore";
+import { usePermissions } from "~/hooks/usePermissions";
 import { useI18n } from "~/hooks/useI18n";
 
 export default function MailboxRoute() {
 	const { t } = useI18n();
+	const {identity, shared, writable} = usePermissions();
 	const { mailboxId } = useParams<{ mailboxId: string }>();
 	// Prefetch mailbox data for child components
 	useMailbox(mailboxId);
@@ -74,13 +76,13 @@ export default function MailboxRoute() {
 			</div>
 
 			{/* Agent + MCP sidebar -- togglable on desktop */}
-			{isAgentPanelOpen && (
+			{isAgentPanelOpen && identity && !shared && (
 				<div className="hidden lg:flex w-[380px] shrink-0 border-l border-kumo-line flex-col bg-kumo-base overflow-hidden">
 					<AgentSidebar />
 				</div>
 			)}
 
-			<ComposeEmail />
+			{writable && <ComposeEmail />}
 		</div>
 	);
 }

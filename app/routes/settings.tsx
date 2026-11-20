@@ -4,12 +4,13 @@
 
 import { Button, Input, Loader, useKumoToastManager } from "@cloudflare/kumo";
 import { useEffect, useState } from "react";
-import { useParams } from "react-router";
+import { Navigate, useParams } from "react-router";
 import { useMailbox, useUpdateMailbox } from "~/queries/mailboxes";
 import { autoReplySettingsSchema } from "../../shared/automatic-replies";
 import { forwardingSettingsSchema } from "../../shared/forwarding";
 import { emailPrivacySettingsSchema } from "../../shared/email-privacy";
 import { useI18n } from "~/hooks/useI18n";
+import { usePermissions } from "~/hooks/usePermissions";
 import MailboxPasswordSettings from "~/components/MailboxPasswordSettings";
 
 export default function SettingsRoute() {
@@ -20,6 +21,7 @@ export default function SettingsRoute() {
 function MailboxSettingsForm({ mailboxId }: { mailboxId: string | undefined }) {
 	const { t, message } = useI18n();
 	const toastManager = useKumoToastManager();
+	const {identity, shared} = usePermissions();
 	const { data: mailbox, error: loadError, isFetching, refetch } = useMailbox(mailboxId);
 	const updateMailboxMutation = useUpdateMailbox();
 
@@ -98,6 +100,7 @@ function MailboxSettingsForm({ mailboxId }: { mailboxId: string | undefined }) {
 		}
 	};
 
+	if (identity?.role === "share" && identity.permission !== "manage") return <Navigate to={`/mailbox/${encodeURIComponent(mailboxId || "")}/emails/inbox`} replace />;
 	if (!mailbox) {
 		if (loadError) {
 			return (
@@ -266,7 +269,7 @@ function MailboxSettingsForm({ mailboxId }: { mailboxId: string | undefined }) {
 					</div>
 				</div>
 
-				<MailboxPasswordSettings mailboxId={mailbox.id} email={mailbox.email} />
+				{!shared && <MailboxPasswordSettings mailboxId={mailbox.id} email={mailbox.email} />}
 			</div>
 			</div>
 		</div>

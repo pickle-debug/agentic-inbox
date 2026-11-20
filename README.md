@@ -45,6 +45,34 @@ https://github.com/cloudflare/agentic-inbox/issues/4#issuecomment-4269118513
 - **Per-mailbox automatic replies** — Configure fixed acknowledgements independently for each mailbox
 - **System AI settings** — Administrators control automatic reply drafts and the AI prompt for all mailboxes; chat history remains per mailbox
 - **Automatic forwarding** — Each mailbox can forward new incoming mail to a verified destination while keeping its Inbox copy and attachments
+- **Domain groups and automatic mailboxes** — Configure receiving domains inside the app or accept all domains routed to the Worker. Create mailboxes automatically on their first incoming message.
+- **Scoped sharing** — Expiring, revocable domain or mailbox keys with read-only, read/write or message-management permissions.
+
+### Receiving domains and automatic mailbox creation
+
+Open **System settings > Receiving domains** as an administrator. Choose **Only listed domains** or **All domains routed to this Worker**, enter domain names (one per line), enable **Create a mailbox automatically when its first email arrives**, and save. The app stores this policy at `settings/reception.json` in the existing R2 bucket. Before the first save, the default remains the `DOMAINS` environment list with automatic creation disabled. After saving, `DOMAINS` is only a fallback; no Worker variable change or redeployment is needed to add another receiving domain in the app. Listed domains are exact matches; add subdomains separately. Removing a domain from the list stops new incoming delivery for that domain, including existing mailboxes, but keeps stored mail readable.
+
+Cloudflare must still enable Email Routing/MX for each domain and route its catch-all to this Worker. Application settings cannot create those external DNS/routing rules. With `zaku.net` routed and accepted, the first delivery to `hr@zaku.net` creates the mailbox with automatic replies, forwarding and AI actions off unless explicitly configured elsewhere. The envelope recipient chooses the mailbox, including BCC; From/To headers cannot provision a different mailbox. Concurrent first deliveries use conditional creation, preserving saved settings. `EMAIL_ADDRESSES` remains an optional address-level allowlist; leave it `[]` to receive arbitrary addresses on accepted domains. Automatic creation consumes storage and Worker quota for previously unknown addresses; it is disabled by default.
+
+The home page lists domains on the left and mailboxes on the right (stacked on mobile). Select a domain, then select a mailbox to read mail. Groups are derived from configured domains and stored mailboxes, so unknown domains in all-domains mode appear after their first delivery. Refresh immediately or wait for the 15-second picker refresh. In all-domains mode, adding a domain to the saved list also creates an empty group for preconfigured sharing. Administratively deleted mailboxes have an R2 tombstone and will not be automatically recreated; explicit manual creation clears the tombstone. As before, mailbox removal hides its retained underlying message data rather than purging the Durable Object. Recreating the same address can reveal its old stored messages to its new authorized viewers; mailbox-scoped sharing keys are revoked on deletion and are never restored by recreation.
+
+### Share a domain or mailbox
+
+Administrators can choose **Share domain** on a domain group or the share icon beside an individual mailbox. Enter a label, choose permissions and a 1–365 day lifetime, then generate and copy the link. Each scope supports multiple independently revocable credentials. Domain sharing includes existing and future mailboxes of that exact domain, excluding subdomains and lookalike domains. Mailbox sharing includes one address only.
+
+| Permission | Allowed actions |
+| --- | --- |
+| Read only | View messages, threads, folders, source and attachments; search and download. Reading does not change read/unread state. |
+| Read/write | Read, send/reply/forward, create or replace drafts, mark read/starred, create or rename folders, and organize mail outside Trash. |
+| Manage | Read/write, plus delete messages/folders, move mail to Trash, and edit mailbox settings. |
+
+Creating/deleting mailboxes, changing passwords, issuing/revoking sharing credentials, contacts and system settings remain administrator-only. Password users retain their existing mailbox behavior. AI agent/WebSocket and MCP access are blocked for shared visitors, preventing these alternate interfaces from bypassing scope or permission checks. Read/write visitors retain original drafts after sending because their key cannot delete them; the UI explicitly confirms that retention.
+
+Domain links use `https://your-inbox.example/?domain=zaku.net&token=SECRET`; mailbox links use `?mailbox=hr%40zaku.net&token=SECRET`. Opening the link exchanges the key for an HttpOnly, Secure (HTTPS), SameSite=Strict session and redirects to a clean URL before any app HTML loads. The session lasts at most eight hours and never outlives its key; revisiting an unexpired link starts another session. This switches the visitor's current app identity, including an existing administrator session. The app stores only SHA-256 digests of cryptographically random 256-bit keys and session secrets. Raw keys are shown only in the creation response; the credential list cannot retrieve them again. Revocation/expiry is checked on every request, including already-exchanged sessions. Keys may also be used as `Authorization: Bearer SECRET` for scoped API requests. Browser writes require the same Origin; non-browser Bearer API calls may omit Origin.
+
+The URL itself is a bearer credential. The application sends `Cache-Control: no-store` and `Referrer-Policy: no-referrer`, and clears the secret in its redirect; the initial URL can still be recorded by your proxy or Cloudflare request logging. Do not publish links or record query strings containing tokens. **If Cloudflare Access protects the whole hostname, visitors will still encounter that outer Access gate.** Use the existing [dual-login setup](docs/dual-login.md) so only `/auth/admin/session` requires Access, while the Worker authenticates normal app paths itself. This change does not modify your Cloudflare Access policies or publish routes.
+
+The auth Durable Object adds `share_keys` and `share_sessions` SQLite tables automatically, without a new binding. Existing password/admin sessions continue to work. Run `npm run test:domains` for local Worker coverage of reception, concurrent provisioning, scope, permission denial, expiry and revocation. Run `npm run test:domains-ui` after a production build for Chromium UI coverage; it uses the same `PRIVACY_TEST_BROWSER` executable override as the privacy tests and mocks all APIs.
 
 ### Interface language
 

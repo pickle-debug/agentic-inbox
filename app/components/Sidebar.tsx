@@ -25,6 +25,7 @@ import { useCreateFolder, useFolders } from "~/queries/folders";
 import { useMailbox } from "~/queries/mailboxes";
 import { useUIStore } from "~/hooks/useUIStore";
 import api from "~/services/api";
+import { canWrite } from "../../shared/access";
 import { useI18n } from "~/hooks/useI18n";
 
 const FOLDER_ICONS: Record<string, React.ReactNode> = {
@@ -146,10 +147,10 @@ export default function Sidebar() {
 		<aside className="h-full w-64 bg-kumo-recessed flex flex-col shrink-0 border-r border-kumo-line">
 			{/* Back + identity */}
 			<div className="px-4 pt-4 pb-1">
-				{session?.role === "admin" && <button
+				{(session?.role === "admin" || (session?.role === "share" && session.scope === "domain")) && <button
 					type="button"
 					onClick={() => {
-						navigate("/");
+						navigate(`/?domain=${encodeURIComponent(mailboxId?.split("@")[1] || "")}`);
 						closeSidebar();
 					}}
 					className="flex items-center gap-1.5 text-kumo-subtle text-sm hover:text-kumo-default transition-colors mb-2.5 cursor-pointer bg-transparent border-0 p-0"
@@ -178,7 +179,7 @@ export default function Sidebar() {
 			</div>
 
 			{/* Compose */}
-			<div className="px-3 py-3">
+			{canWrite(session) && <div className="px-3 py-3">
 				<Button
 					variant="primary"
 					icon={<PencilSimpleIcon size={16} />}
@@ -192,6 +193,8 @@ export default function Sidebar() {
 					{t("Compose", "写邮件")}
 				</Button>
 			</div>
+
+			}
 
 			{/* Navigation */}
 			<nav className="flex-1 overflow-y-auto px-2 space-y-0.5">
@@ -220,6 +223,7 @@ export default function Sidebar() {
 									shape="square"
 									size="sm"
 									icon={<PlusIcon size={16} />}
+									disabled={!canWrite(session)}
 									onClick={() => setIsCreateFolderOpen(true)}
 									aria-label={t("Create new folder", "新建文件夹")}
 								/>
@@ -251,6 +255,7 @@ export default function Sidebar() {
 									shape="square"
 									size="sm"
 									icon={<PlusIcon size={16} />}
+									disabled={!canWrite(session)}
 									onClick={() => setIsCreateFolderOpen(true)}
 									aria-label={t("Create new folder", "新建文件夹")}
 								/>
@@ -259,9 +264,11 @@ export default function Sidebar() {
 					</div>
 				)}
 			</nav>
-			<div className="shrink-0 border-t border-kumo-line p-2">
+			{(session?.role !== "share" || session.permission === "manage") && <div className="shrink-0 border-t border-kumo-line p-2">
 				<FolderLink to={`/mailbox/${encodeURIComponent(mailboxId!)}/settings`} icon={<GearSixIcon size={18} />} label={t("Mailbox settings", "邮箱设置")} onClick={handleNavClick} />
 			</div>
+
+			}
 
 			{/* Create folder dialog */}
 			<Dialog.Root

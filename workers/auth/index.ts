@@ -5,8 +5,9 @@ import { bodyLimit } from "hono/body-limit";
 import { createRemoteJWKSet, jwtVerify } from "jose";
 import { z } from "zod";
 import type { Env } from "../types";
+import type { Identity } from "../../shared/access";
 
-export type Identity = { role: "admin" | "mailbox"; email: string; expires: number };
+export type { Identity } from "../../shared/access";
 export type AuthContext = { Bindings: Env; Variables: { identity: Identity } };
 export const authStore = (env: Env) => env.AUTH.get(env.AUTH.idFromName("auth"));
 const cookieName = (url: string) => new URL(url).protocol === "https:" ? "__Host-inbox_session" : "inbox_session";
@@ -47,20 +48,37 @@ async function revokeSession(c: Context<AuthContext>) {
 export function authentication(development = false) {
 	return createMiddleware<AuthContext>(async (c, next) => {
 		c.header("Cache-Control", "no-store");
+		c.header("Referrer-Policy", "no-referrer");
 		const path = c.req.path;
+		// Exchange URL capabilities before rendering HTML, loading assets, or considering
+		// an existing admin session. Redirect contains no secret. Never log the URL.
+		if (path === "/" && c.req.method === "GET" && c.req.query("token") !== undefined) {
+			const scope = c.req.query("mailbox") ? "mailbox" : "domain";
+			const target = (c.req.query(scope) || "").trim().toLowerCase();
+			const result = await authStore(c.env).shareSession(c.req.query("token") || "", scope, target);
+			if (!result) return c.json({error: "分享链接无效、已过期或已撤销。"}, 401);
+			await revokeSession(c);
+			setSessionCookie(c, result);
+			return c.redirect(scope === "mailbox" ? `/mailbox/${encodeURIComponent(target)}/emails/inbox` : `/?domain=${encodeURIComponent(target)}`, 303);
+		}
 		const origin = new URL(c.req.url).origin;
 		const isWrite = !["GET", "HEAD", "OPTIONS"].includes(c.req.method);
 		const isSocket = c.req.header("upgrade")?.toLowerCase() === "websocket";
 		// MCP Access clients are authenticated using the assertion, not an app cookie.
 		const isMcp = path === "/mcp" || path.startsWith("/mcp/");
-		if ((isWrite || isSocket) && !(isMcp && !c.req.header("origin") && !tokenFrom(c))) {
+		const bearer = c.req.header("authorization")?.match(/^Bearer ([a-f0-9]{64})$/)?.[1];
+		if (path.startsWith("/api/") && c.req.header("authorization") && !bearer) return c.json({error: "无效的 API 凭证。"}, 401);
+		if ((isWrite || isSocket) && !(bearer && !c.req.header("origin") && path.startsWith("/api/")) && !(isMcp && !c.req.header("origin") && !tokenFrom(c))) {
 			if (c.req.header("origin") !== origin) return c.json({ error: "请求来源不匹配。" }, 403);
 		}
 		if (path === "/login" || path === "/auth/login" || path === "/auth/config" || path === "/auth/logout" || path === "/auth/admin/session") return next();
 		const token = tokenFrom(c);
-		if (token) {
+		if (bearer) {
+			const identity = await authStore(c.env).shareIdentity(bearer);
+			if (identity) c.set("identity", identity);
+		} else if (token) {
 			const session = await authStore(c.env).session(token);
-			if (session && (session.role === "admin" || await c.env.BUCKET.head(`mailboxes/${session.email}.json`))) c.set("identity", session);
+			if (session && (session.role === "admin" || (session.role === "share" && session.scope === "domain") || await c.env.BUCKET.head(`mailboxes/${session.email}.json`))) c.set("identity", session);
 			// A stale mailbox cookie must never silently become an administrator.
 		} else if (development && c.env.DEV_ADMIN_EMAIL) {
 			c.set("identity", { role: "admin", email: c.env.DEV_ADMIN_EMAIL, expires: Date.now() + 8 * 3600_000 });

@@ -1,30 +1,19 @@
-// Copyright (c) 2026 Cloudflare, Inc.
-// Licensed under the Apache 2.0 license found in the LICENSE file or at:
-//     https://opensource.org/licenses/Apache-2.0
-
+import { Button, Dialog, Input, Loader } from "@cloudflare/kumo";
 import {
-	Button,
-	Dialog,
-	Empty,
-	Input,
-	Loader,
-	Select,
-	Text,
-	useKumoToastManager,
-} from "@cloudflare/kumo";
-import { EnvelopeIcon, PlusIcon, TrashIcon } from "@phosphor-icons/react";
+	EnvelopeIcon,
+	GlobeIcon,
+	PlusIcon,
+	ShareNetworkIcon,
+	TrashIcon,
+} from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
-import { type FormEvent, useEffect, useRef, useState } from "react";
-import { Navigate, Link as RouterLink } from "react-router";
+import { useState } from "react";
+import { Navigate, Link, useSearchParams } from "react-router";
 import { MailboxPasswordDialog } from "~/components/MailboxPasswordDialog";
-import api from "~/services/api";
-import {
-	useCreateMailbox,
-	useDeleteMailbox,
-	useMailboxes,
-} from "~/queries/mailboxes";
-import { queryKeys } from "~/queries/keys";
+import ShareDialog from "~/components/ShareDialog";
+import { useMailboxes, useCreateMailbox, useDeleteMailbox } from "~/queries/mailboxes";
 import { useI18n } from "~/hooks/useI18n";
+import api from "~/services/api";
 
 export function meta() {
 	return [{ title: "Agentic Inbox" }];
@@ -32,387 +21,341 @@ export function meta() {
 
 export default function HomeRoute() {
 	const { t, message } = useI18n();
-	const toastManager = useKumoToastManager();
-	const { data: mailboxes = [], refetch: refetchMailboxes, isFetched: mailboxesFetched } = useMailboxes();
-	const createMailbox = useCreateMailbox();
-	const deleteMailbox = useDeleteMailbox();
-	const { data: session, error: sessionError, refetch: refetchSession } = useQuery({
-		queryKey: ["session"],
-		queryFn: () => api.getSession(),
-	});
-
-	const { data: configData } = useQuery({
-		queryKey: queryKeys.config,
-		queryFn: () => api.getConfig(),
-		staleTime: Infinity, // config rarely changes
-	});
-
-	const domains = configData?.domains ?? [];
-	const emailAddresses = configData?.emailAddresses ?? [];
-
-	const [isCreateOpen, setIsCreateOpen] = useState(false);
-	const [newPrefix, setNewPrefix] = useState("");
-	const [selectedDomain, setSelectedDomain] = useState("");
-	const [newName, setNewName] = useState("");
-	const [isCreating, setIsCreating] = useState(false);
-	const [createError, setCreateError] = useState<string | null>(null);
-	const [isDeleteOpen, setIsDeleteOpen] = useState(false);
-	const [mailboxToDelete, setMailboxToDelete] = useState<{
-		id: string;
-		email: string;
-	} | null>(null);
-	const [isDeleting, setIsDeleting] = useState(false);
-	const [mailboxForPassword, setMailboxForPassword] = useState<{
-		id: string;
-		email: string;
-	} | null>(null);
-	const isAdmin = session?.role === "admin";
-
-	// Set default domain when config loads
-	useEffect(() => {
-		if (domains.length > 0 && !selectedDomain) {
-			setSelectedDomain(domains[0]);
-		}
-	}, [domains, selectedDomain]);
-
-	// Auto-create mailboxes from config (run once when both data sources are ready)
-	const autoCreateDone = useRef(false);
-	useEffect(() => {
-		if (autoCreateDone.current) return;
-		if (!isAdmin || emailAddresses.length === 0 || !mailboxesFetched) return;
-		const existingEmails = new Set(
-			mailboxes.map((m) => m.email.toLowerCase()),
+	const session = useQuery({ queryKey: ["session"], queryFn: api.getSession });
+	const boxes = useMailboxes({ refetchInterval: 15000 });
+	const config = useQuery({ queryKey: ["config"], queryFn: api.getConfig, refetchInterval: 15000 });
+	const create = useCreateMailbox();
+	const remove = useDeleteMailbox();
+	const [params, setParams] = useSearchParams();
+	const [search, setSearch] = useState("");
+	const [createOpen, setCreateOpen] = useState(false);
+	const [address, setAddress] = useState("");
+	const [error, setError] = useState("");
+	const [share, setShare] = useState<{ scope: "domain" | "mailbox"; target: string } | null>(null);
+	const [password, setPassword] = useState<{ id: string; email: string } | null>(null);
+	const identity = session.data;
+	const admin = identity?.role === "admin";
+	const domains = [
+		...new Set([
+			...(config.data?.domains ?? []),
+			...(boxes.data ?? []).map((box) => box.email.split("@")[1]),
+		]),
+	].sort();
+	const requested = params.get("domain");
+	const selected = domains.includes(requested || "") ? requested! : domains[0] || "";
+	const accounts = (boxes.data ?? [])
+		.filter(
+			(box) =>
+				box.email.split("@")[1] === selected &&
+				box.email.toLowerCase().includes(search.toLowerCase()),
+		)
+		.sort((a, b) => a.email.localeCompare(b.email));
+	if (identity?.role === "mailbox" || (identity?.role === "share" && identity.scope === "mailbox"))
+		return <Navigate to={`/mailbox/${encodeURIComponent(identity.email)}/emails/inbox`} replace />;
+	const loadError = session.error || config.error || boxes.error;
+	if (loadError)
+		return (
+			<main className="p-8 space-y-4">
+				<p role="alert">{message(loadError.message)}</p>
+				<Button
+					onClick={() => {
+						session.refetch();
+						config.refetch();
+						boxes.refetch();
+					}}
+				>
+					{t("Retry", "重试")}
+				</Button>
+			</main>
 		);
-		const toCreate = emailAddresses.filter(
-			(addr) => !existingEmails.has(addr.toLowerCase()),
+	if (!identity || !config.data || !boxes.data)
+		return (
+			<main className="flex justify-center p-16">
+				<Loader />
+			</main>
 		);
-		if (toCreate.length === 0) {
-			autoCreateDone.current = true;
-			return;
-		}
-		autoCreateDone.current = true;
-		let cancelled = false;
-		Promise.all(
-			toCreate.map((addr) => {
-				const localPart = addr.split("@")[0] || addr;
-				return api.createMailbox(addr, localPart).catch(() => {});
-			}),
-		).then(() => { if (!cancelled) refetchMailboxes(); });
-		return () => { cancelled = true; };
-	}, [emailAddresses, isAdmin, mailboxes, refetchMailboxes]);
-
-	const handleCreate = async (e: FormEvent) => {
-		e.preventDefault();
-		setCreateError(null);
-		if (!newPrefix || !selectedDomain) {
-			setCreateError(t("Please fill in all fields", "请填写所有必填项"));
-			return;
-		}
-		const email = `${newPrefix}@${selectedDomain}`;
-		const name = newName || newPrefix;
-		setIsCreating(true);
-		try {
-			await createMailbox.mutateAsync({ email, name });
-			toastManager.add({ title: t("Mailbox created successfully!", "邮箱创建成功！") });
-			setIsCreateOpen(false);
-			setNewPrefix("");
-			setNewName("");
-		} catch (err: unknown) {
-			setCreateError((err instanceof Error ? err.message : null) || t("Failed to create mailbox", "创建邮箱失败"));
-		} finally {
-			setIsCreating(false);
-		}
-	};
-
-	const handleDelete = async () => {
-		if (!mailboxToDelete) return;
-		setIsDeleting(true);
-		try {
-			await deleteMailbox.mutateAsync(mailboxToDelete.id);
-			toastManager.add({ title: t("Mailbox deleted", "邮箱已删除") });
-			setIsDeleteOpen(false);
-			setMailboxToDelete(null);
-		} catch {
-			toastManager.add({ title: t("Failed to delete mailbox", "删除邮箱失败"), variant: "error" });
-		} finally {
-			setIsDeleting(false);
-		}
-	};
-
-	const isConfigured = isAdmin && emailAddresses.length > 0;
-	const accounts = isConfigured
-		? emailAddresses.map((addr) => ({
-				id: addr,
-				email: addr,
-				name: addr.split("@")[0] || addr,
-			}))
-		: mailboxes;
-
-	const isLoading = !configData;
-
-	// Also cover bookmarks and client-side returns to the mailbox picker without adding a history entry.
-	if (session?.role === "mailbox") {
-		return <Navigate to={`/mailbox/${encodeURIComponent(session.email)}/emails/inbox`} replace />;
-	}
-	if (sessionError) {
-		return <div className="min-h-[calc(100dvh-3.5rem)] flex flex-col items-center justify-center gap-4">
-			<Text variant="error">{t("Unable to load login status. Please try again.", "无法读取登录状态，请重试。")}</Text>
-			<Button onClick={() => refetchSession()}>{t("Retry", "重试")}</Button>
-		</div>;
-	}
-	if (!session) {
-		return <div className="min-h-[calc(100dvh-3.5rem)] flex items-center justify-center"><Loader size="lg" /></div>;
-	}
-
 	return (
-		<div className="min-h-[calc(100dvh-3.5rem)] bg-kumo-recessed">
-			<div className="mx-auto max-w-2xl px-4 py-8 md:px-6 md:py-16">
-				<div className="mb-8">
-					<div className="flex flex-wrap items-center justify-between gap-4">
-						<div>
-							<h1 className="text-2xl font-bold text-kumo-default">{t("Mailboxes", "邮箱")}</h1>
-							{session && <p className="mt-1 break-all text-sm text-kumo-subtle">{session.email} · {isAdmin ? t("Administrator", "管理员") : t("Mailbox account", "邮箱账号")}</p>}
-						</div>
-						<div className="flex flex-wrap items-center justify-end gap-2">
-						{isAdmin && !isConfigured && (
-							<Button
-								variant="primary"
-								size="base"
-								className="w-32 justify-center text-sm"
-								icon={<PlusIcon size={16} />}
-								onClick={() => setIsCreateOpen(true)}
-							>
-								{t("New mailbox", "新建邮箱")}
-							</Button>
-						)}
-						{session && <Button variant="secondary" size="base" className="w-32 justify-center text-sm" onClick={async () => { const result = await api.logout(); window.location.href = result.redirect; }}>{t("Sign out", "退出登录")}</Button>}
-						</div>
-					</div>
-					{domains.length > 0 && (
-						<p className="text-sm text-kumo-subtle mt-1">
-							{domains.join(", ")}
-						</p>
-					)}
+		<main className="mx-auto max-w-6xl px-4 py-6 md:px-6 md:py-10">
+			<header className="mb-6 flex flex-wrap items-start justify-between gap-4">
+				<div>
+					<h1 className="text-2xl font-semibold">{t("Mailboxes", "邮箱")}</h1>
+					<p className="mt-1 text-sm text-kumo-subtle">
+						{admin ? t("Administrator", "管理员") : t("Shared access", "分享访问")} ·{" "}
+						{identity.email}
+						{identity.role === "share"
+							? ` · ${identity.permission === "read" ? t("Read only", "只读") : identity.permission === "write" ? t("Read / write", "读写") : t("Manage", "管理")}`
+							: ""}
+					</p>
 				</div>
-
-				{isLoading ? (
-					<div className="flex justify-center py-20">
-						<Loader size="lg" />
+				<div className="flex gap-2">
+					{admin && (
+						<Button
+							size="sm"
+							variant="primary"
+							icon={<PlusIcon size={16} />}
+							onClick={() => {
+								setAddress(selected ? `@${selected}` : "");
+								setError("");
+								setCreateOpen(true);
+							}}
+						>
+							{t("New mailbox", "新建邮箱")}
+						</Button>
+					)}
+					<Button
+						size="sm"
+						variant="secondary"
+						onClick={async () => {
+							try {
+								const result = await api.logout();
+								window.location.replace(result.redirect);
+							} catch (err) {
+								setError(err instanceof Error ? err.message : t("Sign out failed", "退出失败"));
+							}
+						}}
+					>
+						{t("Sign out", "退出登录")}
+					</Button>
+				</div>
+			</header>
+			{error && !createOpen && (
+				<p role="alert" className="mb-4 text-sm text-kumo-error">
+					{message(error)}
+				</p>
+			)}
+			<div className="grid overflow-hidden md:min-h-[480px] rounded-xl border border-kumo-line bg-kumo-base md:grid-cols-[240px_minmax(0,1fr)]">
+				<nav
+					aria-label={t("Domains", "域名列表")}
+					className="border-b border-kumo-line bg-kumo-recessed p-3 md:border-b-0 md:border-r"
+				>
+					<div className="mb-3 px-2 text-xs font-medium text-kumo-subtle">
+						{t(`${domains.length} domains`, `${domains.length} 个域名`)}
 					</div>
-				) : accounts.length > 0 ? (
-					<div className="rounded-xl border border-kumo-line bg-kumo-base overflow-hidden">
-						{accounts.map((account, idx) => (
-							<RouterLink
-								key={account.id}
-								to={`/mailbox/${account.id}`}
-								className={`group flex items-center gap-4 px-5 py-4 no-underline transition-colors hover:bg-kumo-tint ${
-									idx > 0 ? "border-t border-kumo-line" : ""
-								}`}
-							>
-								<div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-kumo-fill text-sm font-bold text-kumo-default">
-									{account.name.charAt(0).toUpperCase()}
-								</div>
-								<div className="min-w-0 flex-1">
-									<div className="text-sm font-medium text-kumo-default truncate">
-										{account.name}
-									</div>
-									<div className="text-sm text-kumo-subtle">
-										{account.email}
-									</div>
-								</div>
-								{isAdmin && !isConfigured && (
-									<Button
-										variant="ghost"
-										size="sm"
-										shape="square"
-										icon={<TrashIcon size={16} />}
-										aria-label={t(`Delete mailbox ${account.email}`, `删除邮箱 ${account.email}`)}
-										onClick={(e) => {
-											e.preventDefault();
-											e.stopPropagation();
-											setMailboxToDelete({
-												id: account.id,
-												email: account.email,
-											});
-											setIsDeleteOpen(true);
-										}}
-									/>
-								)}
-								{isAdmin && (
-									<Button
-										variant="ghost"
-										size="sm"
-										onClick={(event) => {
-											event.preventDefault();
-											event.stopPropagation();
-											setMailboxForPassword({ id: account.id, email: account.email });
-										}}
-									>
-										{t("Password login", "密码登录")}
-									</Button>
-								)}
-							</RouterLink>
-						))}
-					</div>
-				) : (
-					<div className="rounded-xl border border-kumo-line bg-kumo-base py-16 px-6">
-						<div className="flex flex-col items-center text-center">
-							<div className="mb-4">
-								<EnvelopeIcon
-									size={48}
-									weight="thin"
-									className="text-kumo-subtle"
-								/>
-							</div>
-							<h3 className="text-base font-semibold text-kumo-default mb-1.5">
-								{t("No mailboxes yet", "暂无邮箱")}
-							</h3>
-							<p className="text-sm text-kumo-subtle max-w-sm mb-5">
-								{isConfigured
-									? t("Your email routing is configured but no mailboxes have been created yet. They will appear here automatically.", "邮件路由已配置，尚未创建的邮箱将自动显示在此处。")
-									: t("Create a mailbox to start sending and receiving emails with your domain.", "创建邮箱，即可使用你的域名收发邮件。")}
-							</p>
-							{isAdmin && !isConfigured && (
-								<Button
-									variant="primary"
-									icon={<PlusIcon size={16} />}
-									onClick={() => setIsCreateOpen(true)}
-								>
-									{t("Create Mailbox", "创建邮箱")}
-								</Button>
-							)}
-						</div>
-					</div>
-				)}
-			</div>
-
-			{/* Create Dialog */}
-			<Dialog.Root open={isCreateOpen} onOpenChange={setIsCreateOpen}>
-				<Dialog size="sm" className="p-6">
-					<Dialog.Title className="text-base font-semibold mb-5">
-						{t("Create New Mailbox", "创建新邮箱")}
-					</Dialog.Title>
-					<form onSubmit={handleCreate} className="space-y-4">
-						{createError && (
-							<Text variant="error" size="sm">
-								{message(createError)}
-							</Text>
-						)}
-						<div>
-							<span className="text-sm font-medium text-kumo-default mb-1.5 block">
-								{t("Email Address", "邮箱地址")}
-							</span>
-							<div className="flex items-center gap-2">
-								<div className="flex-1">
-									<Input
-										aria-label={t("Address prefix", "邮箱前缀")}
-										placeholder="info"
-										size="sm"
-										value={newPrefix}
-										onChange={(e) => setNewPrefix(e.target.value)}
-										required
-									/>
-								</div>
-								<span className="text-sm text-kumo-subtle">@</span>
-								{domains.length > 1 ? (
-									<div className="flex-1">
-							<Select
-								aria-label={t("Domain", "域名")}
-								value={selectedDomain}
-								onValueChange={(value) => {
-									if (value) setSelectedDomain(value);
+					<div className="flex gap-1 overflow-x-auto md:flex-col md:overflow-x-visible">
+						{domains.map((domain) => (
+							<button
+								key={domain}
+								type="button"
+								aria-current={selected === domain ? "true" : undefined}
+								className={`flex shrink-0 items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm ${selected === domain ? "bg-kumo-base font-semibold text-kumo-default shadow-sm" : "text-kumo-subtle hover:bg-kumo-tint"}`}
+								onClick={() => {
+									setParams({ domain });
+									setSearch("");
 								}}
 							>
-											{domains.map((d) => (
-												<Select.Option key={d} value={d}>
-													{d}
-												</Select.Option>
-											))}
-										</Select>
-									</div>
-								) : (
-									<span className="text-sm text-kumo-subtle">
-										{selectedDomain || t("no domain", "暂无域名")}
+								<GlobeIcon size={16} />
+								<span className="min-w-0 flex-1 truncate">{domain}</span>
+								<span className="text-xs text-kumo-subtle">
+									{boxes.data.filter((box) => box.email.split("@")[1] === domain).length}
+								</span>
+							</button>
+						))}
+					</div>
+					{admin && (
+						<Link
+							to="/settings"
+							className="mt-4 block rounded px-2 text-xs text-kumo-subtle underline"
+						>
+							{t("Configure receiving domains", "配置接收域名")}
+						</Link>
+					)}
+				</nav>
+				<section className="min-w-0">
+					<div className="flex flex-wrap items-center justify-between gap-3 border-b border-kumo-line p-4">
+						<div>
+							<h2 className="font-semibold">{selected || t("No domains yet", "暂无域名")}</h2>
+							<p className="mt-1 text-xs text-kumo-subtle">
+								{t("Select a mailbox to read its messages.", "选择邮箱查看邮件。")}
+							</p>
+						</div>
+						<div className="flex gap-2">
+							{admin && selected && (
+								<Button
+									size="sm"
+									variant="secondary"
+									icon={<ShareNetworkIcon size={16} />}
+									onClick={() => setShare({ scope: "domain", target: selected })}
+								>
+									{t("Share domain", "分享域名组")}
+								</Button>
+							)}
+							<Button
+								size="sm"
+								variant="ghost"
+								onClick={() => {
+									boxes.refetch();
+									config.refetch();
+								}}
+							>
+								{t("Refresh", "刷新")}
+							</Button>
+						</div>
+					</div>
+					<div className="p-4">
+						<Input
+							aria-label={t("Search mailboxes", "搜索邮箱")}
+							placeholder={t("Search mailboxes in this domain", "搜索此域名下的邮箱")}
+							value={search}
+							onChange={(event) => setSearch(event.target.value)}
+						/>
+					</div>
+					<div className="divide-y divide-kumo-line">
+						{accounts.map((account) => (
+							<div
+								key={account.id}
+								className="flex flex-wrap items-center gap-3 px-4 py-3 hover:bg-kumo-tint"
+							>
+								<Link
+									to={`/mailbox/${encodeURIComponent(account.id)}/emails/inbox`}
+									className="flex min-w-0 flex-1 items-center gap-3 text-kumo-default no-underline"
+								>
+									<span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-kumo-fill">
+										<EnvelopeIcon size={18} />
 									</span>
+									<span className="min-w-0">
+										<span className="block truncate text-sm font-medium">
+											{account.email.split("@")[0]}
+										</span>
+										<span className="block truncate text-xs text-kumo-subtle">{account.email}</span>
+									</span>
+								</Link>
+								{admin && (
+									<div className="flex items-center gap-1">
+										<Button
+											size="sm"
+											variant="ghost"
+											onClick={() => setShare({ scope: "mailbox", target: account.email })}
+											aria-label={t(`Share ${account.email}`, `分享邮箱 ${account.email}`)}
+											icon={<ShareNetworkIcon size={16} />}
+											shape="square"
+										/>
+										<Button size="sm" variant="ghost" onClick={() => setPassword(account)}>
+											{t("Password login", "密码登录")}
+										</Button>
+										<Button
+											size="sm"
+											variant="ghost"
+											shape="square"
+											icon={<TrashIcon size={16} />}
+											disabled={remove.isPending}
+											aria-label={t(`Delete mailbox ${account.email}`, `删除邮箱 ${account.email}`)}
+											onClick={async () => {
+												if (
+													!window.confirm(
+														t(`Delete mailbox ${account.email}?`, `删除邮箱 ${account.email}？`),
+													)
+												)
+													return;
+												try {
+													await remove.mutateAsync(account.id);
+												} catch (err) {
+													setError(
+														err instanceof Error
+															? err.message
+															: t("Deletion failed.", "删除失败。"),
+													);
+												}
+											}}
+										/>
+									</div>
 								)}
 							</div>
+						))}
+					</div>
+					{accounts.length === 0 && (
+						<div className="px-6 py-16 text-center">
+							<EnvelopeIcon size={36} className="mx-auto text-kumo-subtle" />
+							<p className="mt-3 text-sm">
+								{search
+									? t("No matching mailboxes.", "没有匹配的邮箱。")
+									: t("No mailboxes in this domain yet.", "此域名下暂无邮箱。")}
+							</p>
+							{admin && (
+								<p className="mt-2 text-xs text-kumo-subtle">
+									{t(
+										"Enable automatic creation in System settings to create mailboxes on first delivery.",
+										"在系统设置开启自动建箱后，首封来信会自动创建邮箱。",
+									)}
+								</p>
+							)}
 						</div>
+					)}
+				</section>
+			</div>
+			<Dialog.Root open={createOpen} onOpenChange={setCreateOpen}>
+				<Dialog size="sm">
+					<Dialog.Title>{t("New mailbox", "新建邮箱")}</Dialog.Title>
+					<form
+						className="mt-4 space-y-4"
+						onSubmit={async (event) => {
+							event.preventDefault();
+							if (create.isPending) return;
+							setError("");
+							try {
+								await create.mutateAsync({
+									email: address.trim().toLowerCase(),
+									name: address.split("@")[0],
+								});
+								config.refetch();
+								setCreateOpen(false);
+							} catch (err) {
+								setError(err instanceof Error ? err.message : t("Creation failed.", "创建失败。"));
+							}
+						}}
+					>
 						<Input
-							label={t("Display Name (optional)", "显示名称（选填）")}
-							placeholder={t("Info", "信息咨询")}
-							size="sm"
-							value={newName}
-							onChange={(e) => setNewName(e.target.value)}
+							label={t("Email", "邮箱")}
+							type="email"
+							value={address}
+							onChange={(event) => setAddress(event.target.value)}
+							required
 						/>
-						<div className="flex justify-end gap-2 pt-2">
-							<Dialog.Close
-								render={(props) => (
-									<Button {...props} variant="secondary" size="sm">
-										{t("Cancel", "取消")}
-									</Button>
-								)}
-							/>
+						<p className="text-xs text-kumo-subtle">
+							{config.data.acceptAll
+								? t(
+										"Any domain already routed to this Worker can be used.",
+										"可使用任意已路由到此 Worker 的域名。",
+									)
+								: config.data.domains.join(", ")}
+						</p>
+						{error && (
+							<p role="alert" className="text-sm text-kumo-error">
+								{message(error)}
+							</p>
+						)}
+						<div className="flex justify-end gap-2">
 							<Button
-								type="submit"
-								variant="primary"
 								size="sm"
-								loading={isCreating}
-								disabled={!selectedDomain}
+								variant="secondary"
+								type="button"
+								onClick={() => setCreateOpen(false)}
 							>
+								{t("Cancel", "取消")}
+							</Button>
+							<Button size="sm" type="submit" variant="primary" disabled={create.isPending}>
 								{t("Create", "创建")}
 							</Button>
 						</div>
 					</form>
 				</Dialog>
 			</Dialog.Root>
-
-			{/* Delete Dialog */}
-			<Dialog.Root
-				open={isDeleteOpen}
-				onOpenChange={(open) => {
-					setIsDeleteOpen(open);
-					if (!open) setMailboxToDelete(null);
-				}}
-			>
-				<Dialog size="sm" className="p-6">
-					<Dialog.Title className="text-base font-semibold mb-2">
-						{t("Delete Mailbox", "删除邮箱")}
-					</Dialog.Title>
-					<Dialog.Description className="text-kumo-subtle text-sm mb-5">
-						{t("Are you sure you want to delete ", "确认删除 ")}
-						<strong className="text-kumo-default">
-							{mailboxToDelete?.email}
-						</strong>
-						{t("? This action cannot be undone.", "？此操作无法撤销。")}
-					</Dialog.Description>
-					<div className="flex justify-end gap-2">
-						<Dialog.Close
-							render={(props) => (
-								<Button {...props} variant="secondary" size="sm">
-									{t("Cancel", "取消")}
-								</Button>
-							)}
-						/>
-						<Button
-							variant="destructive"
-							size="sm"
-							loading={isDeleting}
-							onClick={handleDelete}
-						>
-							{t("Delete", "删除")}
-						</Button>
-					</div>
-				</Dialog>
-			</Dialog.Root>
-
-			{mailboxForPassword && (
-				<MailboxPasswordDialog
-					mailboxId={mailboxForPassword.id}
-					email={mailboxForPassword.email}
-					open={true}
-					onOpenChange={(open) => { if (!open) setMailboxForPassword(null); }}
+			{share && (
+				<ShareDialog
+					key={`${share.scope}:${share.target}`}
+					{...share}
+					onClose={() => setShare(null)}
 				/>
 			)}
-		</div>
+			{password && (
+				<MailboxPasswordDialog
+					mailboxId={password.id}
+					email={password.email}
+					open
+					onOpenChange={(open) => {
+						if (!open) setPassword(null);
+					}}
+				/>
+			)}
+		</main>
 	);
 }

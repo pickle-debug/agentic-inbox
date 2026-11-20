@@ -6,6 +6,7 @@ import { Navigate } from "react-router";
 import { systemSettingsSchema, type SystemSettings } from "../../shared/system-settings";
 import { useI18n } from "~/hooks/useI18n";
 import api from "~/services/api";
+import ReceptionSettings from "~/components/ReceptionSettings";
 
 export function meta() { return [{ title: "Agentic Inbox" }]; }
 
@@ -40,7 +41,8 @@ export default function SystemSettingsRoute() {
 	const loadError = session.error || settings.error;
 	return <main className="mx-auto w-full max-w-2xl px-4 py-8 md:px-6 md:py-12">
 		<h1 className="text-2xl font-semibold">{t("System settings", "系统设置")}</h1>
-		<p className="mt-2 text-sm text-kumo-subtle">{t("Administrator settings for the AI assistant across all mailboxes.", "管理员统一配置所有邮箱的 AI 助手。")}</p>
+		<p className="mt-2 text-sm text-kumo-subtle">{t("Configure receiving domains and the AI assistant for all mailboxes.", "管理收信域名、自动建箱及所有邮箱的 AI 助手。")}</p>
+		{session.data?.role === "admin" && <ReceptionSettings />}
 		{loadError ? <div className="mt-6 space-y-3">
 			<p role="alert" className="text-sm text-kumo-error">{message(loadError.message)}</p>
 			<Button size="sm" disabled={session.isFetching || settings.isFetching} onClick={() => void (session.isError ? session.refetch() : settings.refetch())}>{t("Retry", "重试")}</Button>

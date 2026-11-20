@@ -26,6 +26,9 @@ import { Folders } from "../shared/folders";
 import { forwardingSettingsSchema } from "../shared/forwarding";
 import { autoReplySettingsSchema } from "../shared/automatic-replies";
 import { emailPrivacySettingsSchema } from "../shared/email-privacy";
+import { canAccessMailbox, shareInputSchema, mailboxAddressSchema } from "../shared/access";
+import { acceptsDomain, receptionSchema } from "../shared/reception";
+import { defaultMailboxSettings, getReception, RECEPTION_KEY } from "./lib/reception";
 import { processAutomaticReplies } from "./lib/automatic-replies";
 import type { EmailFull } from "./lib/schemas";
 import type { Env } from "./types";
@@ -110,8 +113,14 @@ app.use("/api/*", async (c, next) => {
 });
 app.use("/api/v1/mailboxes/:mailboxId/*", async (c, next) => {
 	const identity = c.var.identity;
-	if (identity.role !== "admin" && c.req.param("mailboxId") !== identity.email) return c.json({ error: "无权访问该邮箱。" }, 403);
-	if (identity.role !== "admin" && (c.req.path.endsWith("/login") || (c.req.method === "DELETE" && c.req.path.split("/").length === 5))) return c.json({ error: "仅管理员可执行此操作。" }, 403);
+	// 对所有邮箱 API 统一先校验范围，再区分读写/删除；前端隐藏按钮不构成授权。
+	if (!canAccessMailbox(identity, c.req.param("mailboxId"))) return c.json({ error: "无权访问该邮箱。" }, 403);
+	if (identity.role === "share") {
+		const read = ["GET", "HEAD", "OPTIONS"].includes(c.req.method);
+		const mailboxRoot = c.req.path.split("/").length === 5;
+		if (c.req.path.endsWith("/login") || c.req.path.endsWith("/password")) return c.json({error: "分享访问不能修改登录凭证。"}, 403);
+		if (!read && (identity.permission === "read" || ((c.req.method === "DELETE" || mailboxRoot) && identity.permission !== "manage"))) return c.json({error: "分享权限不足。"}, 403);
+	} else if (identity.role !== "admin" && (c.req.path.endsWith("/login") || (c.req.method === "DELETE" && c.req.path.split("/").length === 5))) return c.json({ error: "仅管理员可执行此操作。" }, 403);
 	return next();
 });
 app.use("/api/v1/mailboxes/:mailboxId/login", async (c, next) => {
@@ -135,20 +144,48 @@ app.put("/api/v1/settings", async (c) => {
 	return c.json(body.data);
 });
 
+app.use("/api/v1/reception", async (c, next) => c.var.identity.role === "admin" ? next() : c.json({error: "仅管理员可配置收信策略。"}, 403));
+app.use("/api/v1/reception", bodyLimit({maxSize: 64 * 1024}));
+app.get("/api/v1/reception", async c => c.json(await getReception(c.env)));
+app.put("/api/v1/reception", async c => {
+	const parsed = receptionSchema.safeParse(await c.req.json().catch(() => null));
+	if (!parsed.success) return c.json({error: parsed.error.issues[0].message}, 400);
+	await c.env.BUCKET.put(RECEPTION_KEY, JSON.stringify(parsed.data));
+	return c.json(parsed.data);
+});
+app.use("/api/v1/shares/*", async (c, next) => c.var.identity.role === "admin" ? next() : c.json({error: "仅管理员可管理分享凭证。"}, 403));
+app.use("/api/v1/shares/*", bodyLimit({maxSize: 4096}));
+app.get("/api/v1/shares", async c => c.json(await authStore(c.env).listShares()));
+app.post("/api/v1/shares", async c => {
+	const parsed = shareInputSchema.safeParse(await c.req.json().catch(() => null));
+	if (!parsed.success) return c.json({error: parsed.error.issues[0].message}, 400);
+	if (parsed.data.scope === "mailbox" && !(await c.env.BUCKET.head(`mailboxes/${parsed.data.target}.json`))) return c.json({error: "邮箱不存在。"}, 404);
+	if (parsed.data.scope === "domain") {
+		const reception = await getReception(c.env);
+		const exists = (await listMailboxes(c.env.BUCKET)).some(m => m.email.split("@")[1] === parsed.data.target);
+		if (!reception.domains.includes(parsed.data.target) && !exists) return c.json({error: "请先配置该域名或等待首封邮件到达。"}, 400);
+	}
+	return c.json(await authStore(c.env).createShare(parsed.data), 201);
+});
+app.delete("/api/v1/shares/:id", async c => { await authStore(c.env).revokeShare(c.req.param("id")); return c.body(null, 204); });
+
 // -- Config ---------------------------------------------------------
 
-app.get("/api/v1/config", (c) => {
-	const domainsRaw = c.env.DOMAINS || "";
-	const domains = domainsRaw.split(",").map((d) => d.trim()).filter(Boolean);
+app.get("/api/v1/config", async (c) => {
+	const reception = await getReception(c.env);
+	const identity = c.var.identity;
+	if (identity.role === "mailbox") return c.json({domains: [], emailAddresses: []});
+	const visible = (await listMailboxes(c.env.BUCKET)).filter(m => canAccessMailbox(identity, m.email));
+	const domains = [...new Set([...(identity.role === "admin" ? reception.domains : []), ...visible.map(m => m.email.split("@")[1]), ...(identity.role === "share" && identity.scope === "domain" ? [identity.target] : [])])].sort();
 	const emailAddresses = c.env.EMAIL_ADDRESSES ?? [];
-	return c.json(c.var.identity.role === "admin" ? { domains, emailAddresses } : { domains: [], emailAddresses: [] });
+	return c.json({ domains, emailAddresses: identity.role === "admin" ? emailAddresses : [], acceptAll: identity.role === "admin" && reception.mode === "all" });
 });
 
 // -- Mailboxes ------------------------------------------------------
 
 app.get("/api/v1/mailboxes", async (c) => {
 	const allMailboxes = await listMailboxes(c.env.BUCKET);
-	return c.json(allMailboxes.filter(m => c.var.identity.role === "admin" || m.id === c.var.identity.email).map((m) => ({ ...m, name: m.id })));
+	return c.json(allMailboxes.filter(m => canAccessMailbox(c.var.identity, m.id)).map((m) => ({ ...m, name: m.id })));
 });
 
 app.post("/api/v1/mailboxes", async (c) => {
@@ -159,17 +196,17 @@ app.post("/api/v1/mailboxes", async (c) => {
 	const email = rawEmail.toLowerCase();
 	const parsedSettings = mailboxSettingsSchema(email).safeParse(settings ?? {});
 	if (!parsedSettings.success) return c.json({ error: parsedSettings.error.issues[0].message }, 400);
-	const domains = (c.env.DOMAINS || "").split(",").map(d => d.trim().toLowerCase());
-	if (!domains.includes(email.split("@")[1])) return c.json({ error: "邮箱必须属于已配置的域名。" }, 400);
+	if (!acceptsDomain(await getReception(c.env), email.split("@")[1])) return c.json({ error: "邮箱必须属于已配置的域名。" }, 400);
 	const allowedAddresses = (c.env.EMAIL_ADDRESSES ?? []) as string[];
 	if (allowedAddresses.length > 0 && !allowedAddresses.map((a) => a.toLowerCase()).includes(email)) {
 		return c.json({ error: "Mailbox creation is restricted to configured EMAIL_ADDRESSES" }, 403);
 	}
 	const key = `mailboxes/${email}.json`;
 	if (await c.env.BUCKET.head(key)) return c.json({ error: "Mailbox already exists" }, 409);
-	const defaultSettings = { fromName: name, privacy: { enabled: false, domains: [] }, forwarding: { enabled: false, email: "" }, signature: { enabled: false, text: "" }, autoReply: { enabled: false, subject: "", message: "" } };
+	const defaultSettings = defaultMailboxSettings(name);
 	const finalSettings = { ...defaultSettings, ...parsedSettings.data };
 	await c.env.BUCKET.put(key, JSON.stringify(finalSettings));
+	await c.env.BUCKET.delete(`deleted-mailboxes/${email}.json`);
 	const stub = c.env.MAILBOX.get(c.env.MAILBOX.idFromName(email));
 	await stub.getFolders();
 	return c.json({ id: email, email, name, settings: finalSettings }, 201);
@@ -200,7 +237,9 @@ app.delete("/api/v1/mailboxes/:mailboxId", async (c) => {
 	const mailboxId = c.req.param("mailboxId")!;
 	const key = `mailboxes/${mailboxId}.json`;
 	if (!(await c.env.BUCKET.head(key))) return c.json({ error: "Not found" }, 404);
+	await c.env.BUCKET.put(`deleted-mailboxes/${mailboxId}.json`, JSON.stringify({deleted: Date.now()}));
 	await authStore(c.env).disable(mailboxId);
+	await authStore(c.env).revokeMailboxShares(mailboxId);
 	await c.env.EMAIL_AGENT.get(c.env.EMAIL_AGENT.idFromName(mailboxId)).disconnectClients();
 	await c.env.BUCKET.delete(key); // TODO: also delete DO data and R2 attachment blobs
 	return c.body(null, 204);
@@ -298,6 +337,10 @@ app.post("/api/v1/mailboxes/:mailboxId/drafts", async (c: AppContext) => {
 	const mailboxId = c.req.param("mailboxId")!;
 	const { to, cc, bcc, subject, body, in_reply_to, thread_id, draft_id, attachments } = DraftBody.parse(await c.req.json());
 	const stub = c.var.mailboxStub;
+	if (draft_id && c.var.identity.role === "share" && c.var.identity.permission !== "manage") {
+		const previous = await stub.getEmail(draft_id);
+		if (!previous || previous.folder_id !== Folders.DRAFT) return c.json({error: "只能替换已有草稿。"}, 403);
+	}
 	const messageId = crypto.randomUUID();
 	const now = new Date().toISOString();
 	const attachmentData = await storeAttachments(c.env.BUCKET, messageId, attachments);
@@ -344,6 +387,7 @@ app.delete("/api/v1/mailboxes/:mailboxId/emails/:id", async (c: AppContext) => {
 
 app.post("/api/v1/mailboxes/:mailboxId/emails/:id/move", async (c: AppContext) => {
 	const { folderId } = (await c.req.json()) as { folderId: string };
+	if (folderId === Folders.TRASH && c.var.identity.role === "share" && c.var.identity.permission !== "manage") return c.json({error: "删除邮件需要管理权限。"}, 403);
 	const success = await c.var.mailboxStub.moveEmail(c.req.param("id")!, folderId);
 	return success ? c.json({ status: "moved" }) : c.json({ error: "Folder not found" }, 400);
 });
@@ -448,15 +492,24 @@ async function receiveEmail(event: ForwardableEmailMessage, env: Env, ctx: Execu
 	const bccRecipients = (parsedEmail.bcc || []).map((e) => e.address?.toLowerCase()).filter(Boolean) as string[];
 
 	// The SMTP envelope identifies the receiving mailbox, including BCC delivery.
-	const mailboxId = event.to?.trim().toLowerCase();
-	if (!mailboxId) throw new Error("received email with no valid recipient address");
+	const parsedRecipient = mailboxAddressSchema.safeParse(event.to);
+	if (!parsedRecipient.success) throw new Error("received email with no valid recipient address");
+	const mailboxId = parsedRecipient.data;
 	if (allowedAddresses.length > 0 && !allowedAddresses.includes(mailboxId)) {
 		console.log("Ignoring email: envelope recipient does not match EMAIL_ADDRESSES.");
 		return;
 	}
 
 	const messageId = crypto.randomUUID();
-	if (!(await env.BUCKET.head(`mailboxes/${mailboxId}.json`))) { console.log(`Ignoring email for ${mailboxId}: mailbox does not exist`); return; }
+	const reception = await getReception(env);
+	if (!acceptsDomain(reception, mailboxId.split("@")[1])) { console.log("Ignoring email: receiving domain is not enabled."); return; }
+	if (!(await env.BUCKET.head(`mailboxes/${mailboxId}.json`))) {
+		if (!reception.autoCreate) { console.log("Ignoring email: mailbox does not exist"); return; }
+		// 删除标记避免普通来信自动复活邮箱及其保留的历史数据；仅管理员显式建箱可清除。
+		if (await env.BUCKET.head(`deleted-mailboxes/${mailboxId}.json`)) { console.log("Ignoring email: mailbox was deleted by an administrator."); return; }
+		// Atomic create: simultaneous first deliveries must never overwrite settings.
+		await env.BUCKET.put(`mailboxes/${mailboxId}.json`, JSON.stringify(defaultMailboxSettings(mailboxId.split("@")[0])), {onlyIf: {etagDoesNotMatch: "*"}});
+	}
 
 	const stub = env.MAILBOX.get(env.MAILBOX.idFromName(mailboxId));
 

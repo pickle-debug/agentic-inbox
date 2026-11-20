@@ -5,6 +5,8 @@
 import type { Email, Folder, Mailbox } from "~/types";
 import type { Contact, ContactInput, ContactList } from "../../shared/contacts";
 import type { SystemSettings } from "../../shared/system-settings";
+import type { Identity, ShareInfo, ShareInput } from "../../shared/access";
+import type { ReceptionSettings } from "../../shared/reception";
 
 const REQUEST_TIMEOUT_MS = 30_000;
 
@@ -99,7 +101,12 @@ interface EmailListResponse {
 // ---------- API client ----------
 
 const api = {
-	getSession: () => get<{ role: "admin" | "mailbox"; email: string }>("/auth/session"),
+	getSession: () => get<Identity>("/auth/session"),
+	getReception: () => get<ReceptionSettings>("/api/v1/reception"),
+	updateReception: (settings: ReceptionSettings) => put<ReceptionSettings>("/api/v1/reception", settings),
+	listShares: () => get<ShareInfo[]>("/api/v1/shares"),
+	createShare: (input: ShareInput) => post<ShareInfo & {token: string}>("/api/v1/shares", input),
+	revokeShare: (id: string) => del<void>(`/api/v1/shares/${encodeURIComponent(id)}`),
 	getSystemSettings: () => get<SystemSettings>("/api/v1/settings"),
 	updateSystemSettings: (settings: SystemSettings) => put<SystemSettings>("/api/v1/settings", settings),
 	changeMailboxPassword: (id: string, currentPassword: string, password: string) => request<{ ok: boolean }>(`/api/v1/mailboxes/${encodeURIComponent(id)}/password`, {
@@ -120,7 +127,7 @@ const api = {
 	deleteContact: (id: string) => del<void>(`/api/v1/contacts/${encodeURIComponent(id)}`),
 	// Config
 	getConfig: () =>
-		get<{ domains: string[]; emailAddresses: string[] }>("/api/v1/config"),
+		get<{ domains: string[]; emailAddresses: string[]; acceptAll: boolean }>("/api/v1/config"),
 
 	// Mailboxes
 	listMailboxes: () => get<Mailbox[]>("/api/v1/mailboxes"),

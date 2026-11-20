@@ -14,7 +14,10 @@
 		// TEAM_DOMAIN may be the base Access URL or the full /cdn-cgi/access/certs URL.
 		// Access authenticates administrators; mailbox sessions authenticate internal users.
 		// Single-site setup: protect /auth/admin/session with Access; set ADMIN_ORIGIN to the site origin.
+		// 首次配置的回退域名；系统内保存收信策略后，以 R2 的 settings/reception.json 为准。
+		// 保留此变量即可，新增域名不必继续修改这里；全接收请在系统设置中显式开启。
 		"DOMAINS": "ordoeden.com,vibeapi.cc,heself.com,faapi.cc",
+		// 独立的具体收件地址白名单：[] 不限制地址；非空时，全接收模式也仍受此名单限制。
 		"EMAIL_ADDRESSES": []
 	},
 	"send_email": [

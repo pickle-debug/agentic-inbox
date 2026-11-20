@@ -25,6 +25,7 @@ import {
 import { useDeleteEmail, useForwardEmail, useReplyToEmail, useSaveDraft, useSendEmail } from "~/queries/emails";
 import { useMailbox } from "~/queries/mailboxes";
 import { useUIStore } from "~/hooks/useUIStore";
+import { usePermissions } from "~/hooks/usePermissions";
 import api from "~/services/api";
 
 const MAX_TOTAL_ATTACHMENT_BYTES = 25 * 1024 * 1024;
@@ -175,6 +176,7 @@ function buildInitialComposeFields(
 
 export function useComposeForm(mailboxId?: string, _folder?: string) {
 	const { t, message: localizeMessage } = useI18n();
+	const {deletable} = usePermissions();
 	const toastManager = useKumoToastManager();
 	const { composeOptions, closePanel, closeCompose } = useUIStore();
 	const { data: currentMailbox } = useMailbox(mailboxId);
@@ -367,8 +369,8 @@ export function useComposeForm(mailboxId?: string, _folder?: string) {
 			if ((mode === "reply" || mode === "reply-all") && originalId) await replyMutation.mutateAsync({ mailboxId, emailId: originalId, email: emailData });
 			else if (mode === "forward" && originalId) await forwardMutation.mutateAsync({ mailboxId, emailId: originalId, email: emailData });
 			else await sendEmailMutation.mutateAsync({ mailboxId, email: emailData });
-			if (draftId) deleteEmailMutation.mutate({ mailboxId, id: draftId });
-			toastManager.add({ title: t("Email sent!", "邮件已发送！") });
+			if (draftId && deletable) deleteEmailMutation.mutate({ mailboxId, id: draftId });
+			toastManager.add({ title: draftId && !deletable ? t("Email sent. The original draft is retained with your current permissions.", "邮件已发送，当前权限保留原草稿。") : t("Email sent!", "邮件已发送！") });
 			onClose();
 		} catch (err: unknown) { const message = (err instanceof Error ? err.message : null) || "Failed to send email."; setError(message); toastManager.add({ title: localizeComposeError(message), variant: "error" }); }
 		finally { setIsSending(false); }

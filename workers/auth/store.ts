@@ -2,6 +2,7 @@ import { DurableObject } from "cloudflare:workers";
 import { Buffer } from "node:buffer";
 import { createHash, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 import type { Env } from "../types";
+import { shareInputSchema, type ShareInfo, type Identity } from "../../shared/access";
 
 const hash = (value: string) => createHash("sha256").update(value).digest("hex");
 const derive = (password: string, salt: string) => scryptSync(password, salt, 32, { N: 16384, r: 8, p: 5, maxmem: 32 * 1024 * 1024 });
@@ -17,6 +18,8 @@ export class AuthStore extends DurableObject<Env> {
 			ctx.storage.sql.exec("ALTER TABLE sessions ADD COLUMN role TEXT NOT NULL DEFAULT 'mailbox'");
 		}
 		ctx.storage.sql.exec(`CREATE TABLE IF NOT EXISTS attempts (key TEXT PRIMARY KEY, count INTEGER NOT NULL, expires INTEGER NOT NULL)`);
+		ctx.storage.sql.exec(`CREATE TABLE IF NOT EXISTS share_keys (id TEXT PRIMARY KEY, token_hash TEXT UNIQUE NOT NULL, scope TEXT NOT NULL, target TEXT NOT NULL, permission TEXT NOT NULL, label TEXT NOT NULL, created INTEGER NOT NULL, expires INTEGER NOT NULL)`);
+		ctx.storage.sql.exec(`CREATE TABLE IF NOT EXISTS share_sessions (token TEXT PRIMARY KEY, key_id TEXT NOT NULL, expires INTEGER NOT NULL)`);
 	}
 	status(email: string) {
 		return { enabled: this.ctx.storage.sql.exec("SELECT email FROM credentials WHERE email = ?", email).toArray().length > 0 };
@@ -71,7 +74,49 @@ export class AuthStore extends DurableObject<Env> {
 	}
 	session(token: string) {
 		if (!/^[a-f0-9]{64}$/.test(token)) return null;
-		return this.ctx.storage.sql.exec<{ email: string; expires: number; role: "admin" | "mailbox" }>("SELECT email, expires, role FROM sessions WHERE token = ? AND expires > ?", hash(token), Date.now()).toArray()[0] ?? null;
+		const regular = this.ctx.storage.sql.exec<{ email: string; expires: number; role: "admin" | "mailbox" }>("SELECT email, expires, role FROM sessions WHERE token = ? AND expires > ?", hash(token), Date.now()).toArray()[0];
+		if (regular) return regular;
+		// 每次请求关联原始凭证重新校验，撤销/过期后已兑换的会话也立即失效。
+		const shared = this.ctx.storage.sql.exec<ShareInfo>(`SELECT k.id, k.scope, k.target, k.permission, k.label, k.created, MIN(k.expires, s.expires) AS expires FROM share_sessions s JOIN share_keys k ON k.id = s.key_id WHERE s.token = ? AND s.expires > ? AND k.expires > ?`, hash(token), Date.now(), Date.now()).toArray()[0];
+		return shared ? this.#shareIdentity(shared) : null;
+	}
+	#shareIdentity(key: ShareInfo): Identity {
+		return {role: "share", email: key.target, expires: key.expires, scope: key.scope, target: key.target, permission: key.permission, keyId: key.id};
+	}
+	createShare(input: unknown) {
+		const value = shareInputSchema.parse(input);
+		const key: ShareInfo = {id: crypto.randomUUID(), scope: value.scope, target: value.target, permission: value.permission, label: value.label, created: Date.now(), expires: Date.now() + value.days * 86400_000};
+		const token = randomBytes(32).toString("hex");
+		this.ctx.storage.sql.exec("INSERT INTO share_keys VALUES (?, ?, ?, ?, ?, ?, ?, ?)", key.id, hash(token), key.scope, key.target, key.permission, key.label, key.created, key.expires);
+		// 只在创建响应中返回明文，列表和持久化存储都无法恢复这把密钥。
+		return {...key, token};
+	}
+	listShares() {
+		return this.ctx.storage.sql.exec<ShareInfo>("SELECT id, scope, target, permission, label, created, expires FROM share_keys ORDER BY created DESC").toArray();
+	}
+	revokeShare(id: string) {
+		this.ctx.storage.transactionSync(() => {
+			this.ctx.storage.sql.exec("DELETE FROM share_sessions WHERE key_id = ?", id);
+			this.ctx.storage.sql.exec("DELETE FROM share_keys WHERE id = ?", id);
+		});
+	}
+	revokeMailboxShares(email: string) {
+		for (const key of this.listShares().filter(key => key.scope === "mailbox" && key.target === email)) this.revokeShare(key.id);
+	}
+	shareIdentity(token: string) {
+		if (!/^[a-f0-9]{64}$/.test(token)) return null;
+		const key = this.ctx.storage.sql.exec<ShareInfo>("SELECT id, scope, target, permission, label, created, expires FROM share_keys WHERE token_hash = ? AND expires > ?", hash(token), Date.now()).toArray()[0];
+		return key ? this.#shareIdentity(key) : null;
+	}
+	shareSession(token: string, scope: string, target: string) {
+		const identity = this.shareIdentity(token);
+		if (!identity || identity.role !== "share" || identity.scope !== scope || identity.target !== target) return null;
+		const session = randomBytes(32).toString("hex");
+		// 浏览器持有独立的短期会话；授权范围只取数据库，不能信任 URL 声称的权限。
+		const expires = Math.min(identity.expires, Date.now() + SESSION_MS);
+		this.ctx.storage.sql.exec("DELETE FROM share_sessions WHERE expires <= ?", Date.now());
+		this.ctx.storage.sql.exec("INSERT INTO share_sessions VALUES (?, ?, ?)", hash(session), identity.keyId, expires);
+		return {token: session, maxAge: Math.floor((expires - Date.now()) / 1000)};
 	}
 	adminSession(email: string, accessExpires: number) {
 		const expires = Math.min(accessExpires, Date.now() + SESSION_MS);
@@ -82,5 +127,8 @@ export class AuthStore extends DurableObject<Env> {
 		this.ctx.storage.sql.exec("INSERT INTO sessions VALUES (?, ?, ?, ?)", hash(token), email, expires, "admin");
 		return { token, maxAge };
 	}
-	logout(token: string) { this.ctx.storage.sql.exec("DELETE FROM sessions WHERE token = ?", hash(token)); }
+	logout(token: string) {
+		this.ctx.storage.sql.exec("DELETE FROM sessions WHERE token = ?", hash(token));
+		this.ctx.storage.sql.exec("DELETE FROM share_sessions WHERE token = ?", hash(token));
+	}
 }

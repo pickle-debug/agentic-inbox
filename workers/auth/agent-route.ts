@@ -6,6 +6,8 @@ import type { AuthContext } from "./index";
 export async function handleAgentRequest(c: Context<AuthContext>) {
 	const identity = c.var.identity;
 	if (!identity) return c.json({ error: "请先登录。" }, 401);
+	// Agent 工具能修改邮件，不能让分享访客通过另一条入口绕过邮箱 API 的分级权限。
+	if (identity.role === "share") return c.json({error: "分享访问不支持 AI 助手。"}, 403);
 	const segments = c.req.path.split("/");
 	let mailboxId: string;
 	try { mailboxId = decodeURIComponent(segments[3] ?? ""); } catch { return c.json({ error: "Invalid mailbox" }, 400); }

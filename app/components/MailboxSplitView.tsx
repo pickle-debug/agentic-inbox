@@ -2,6 +2,7 @@
 // Licensed under the Apache 2.0 license found in the LICENSE file or at:
 //     https://opensource.org/licenses/Apache-2.0
 
+import { usePermissions } from "~/hooks/usePermissions";
 import type { ReactNode } from "react";
 import ComposePanel from "~/components/ComposePanel";
 import EmailPanel from "~/components/EmailPanel";
@@ -17,6 +18,8 @@ export default function MailboxSplitView({
 	isComposing,
 	children,
 }: MailboxSplitViewProps) {
+	const {writable} = usePermissions();
+	isComposing = isComposing && writable;
 	const isPanelOpen = selectedEmailId !== null || isComposing;
 
 	return (

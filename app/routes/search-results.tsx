@@ -12,6 +12,7 @@ import { useUpdateEmail } from "~/queries/emails";
 import { useSearchEmails, SEARCH_PAGE_SIZE } from "~/queries/search";
 import { useUIStore } from "~/hooks/useUIStore";
 import type { Email } from "~/types";
+import { usePermissions } from "~/hooks/usePermissions";
 import { useI18n } from "~/hooks/useI18n";
 
 function highlightTerms(text: string, query: string): React.ReactNode {
@@ -32,6 +33,7 @@ function highlightTerms(text: string, query: string): React.ReactNode {
 
 export default function SearchResultsRoute() {
 	const { t, dateLocale, folderName: localizeFolderName } = useI18n();
+	const {writable} = usePermissions();
 	const { mailboxId } = useParams<{ mailboxId: string }>();
 	const [searchParams] = useSearchParams();
 	const navigate = useNavigate();
@@ -69,7 +71,7 @@ export default function SearchResultsRoute() {
 	const totalPages = Math.max(1, Math.ceil(totalCount / SEARCH_PAGE_SIZE));
 	const isPanelOpen = selectedEmailId !== null || isComposing;
 
-	const handleRowClick = (email: Email) => { selectEmail(email.id); if (!email.read && mailboxId) updateEmail.mutate({ mailboxId, id: email.id, data: { read: true } }); };
+	const handleRowClick = (email: Email) => { selectEmail(email.id); if (writable && !email.read && mailboxId) updateEmail.mutate({ mailboxId, id: email.id, data: { read: true } }); };
 
 	return (
 		<MailboxSplitView

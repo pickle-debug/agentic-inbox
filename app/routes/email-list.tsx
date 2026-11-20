@@ -33,6 +33,7 @@ import { useFolders } from "~/queries/folders";
 import { queryKeys } from "~/queries/keys";
 import { useUIStore } from "~/hooks/useUIStore";
 import type { Email } from "~/types";
+import { usePermissions } from "~/hooks/usePermissions";
 import { useI18n } from "~/hooks/useI18n";
 
 const PAGE_SIZE = 25;
@@ -112,6 +113,7 @@ function FolderEmptyState({
 	onCompose: () => void;
 }) {
 	const { t } = useI18n();
+	const {writable} = usePermissions();
 	const config = (folder && getFolderEmptyStates(t)[folder]) || {
 		icon: (
 			<EnvelopeSimpleIcon size={48} weight="thin" className="text-kumo-subtle" />
@@ -129,7 +131,7 @@ function FolderEmptyState({
 			<p className="text-sm text-kumo-subtle max-w-xs mb-5">
 				{config.description}
 			</p>
-			{"showCompose" in config && config.showCompose && (
+			{writable && "showCompose" in config && config.showCompose && (
 				<Button
 					variant="primary"
 					size="sm"
@@ -145,6 +147,7 @@ function FolderEmptyState({
 
 export default function EmailListRoute() {
 	const { t, dateLocale, folderName: localizeFolderName } = useI18n();
+	const {writable, deletable} = usePermissions();
 	const { mailboxId, folder } = useParams<{
 		mailboxId: string;
 		folder: string;
@@ -248,7 +251,7 @@ export default function EmailListRoute() {
 
 	const handleRowClick = (email: Email) => {
 		selectEmail(email.id);
-		if (mailboxId && hasUnread(email)) {
+		if (writable && mailboxId && hasUnread(email)) {
 			if (email.thread_id && email.thread_count && email.thread_count > 1) {
 				markThreadRead.mutate({
 					mailboxId,
@@ -356,6 +359,7 @@ export default function EmailListRoute() {
 										<button
 											type="button"
 											className="shrink-0 p-0.5 bg-transparent border-0 cursor-pointer"
+											disabled={!writable}
 											aria-label={email.starred ? t("Unstar", "取消星标") : t("Star", "添加星标")}
 											onClick={(e) => {
 												e.stopPropagation();
@@ -433,6 +437,7 @@ export default function EmailListRoute() {
 																data: { read: !email.read },
 															});
 													}}
+													disabled={!writable}
 													aria-label={email.read ? t("Mark unread", "标为未读") : t("Mark read", "标为已读")}
 												/>
 											</Tooltip>
@@ -443,6 +448,7 @@ export default function EmailListRoute() {
 													size="sm"
 													icon={<TrashIcon size={14} />}
 													onClick={(e) => handleDelete(e, email.id)}
+													disabled={!deletable}
 													aria-label={t("Delete", "删除")}
 												/>
 											</Tooltip>
