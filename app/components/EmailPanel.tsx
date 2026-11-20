@@ -5,6 +5,7 @@
 import { usePermissions } from "~/hooks/usePermissions";
 import { useI18n } from "~/hooks/useI18n";
 import { Banner, Button, useKumoToastManager } from "@cloudflare/kumo";
+import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router";
 import { Folders } from "shared/folders";
@@ -22,6 +23,7 @@ import api from "~/services/api";
 import { useDeleteEmail, useEmail, useMoveEmail, useReplyToEmail, useSendEmail, useThreadReplies, useUpdateEmail } from "~/queries/emails";
 import { useFolders } from "~/queries/folders";
 import { useMailbox } from "~/queries/mailboxes";
+import { queryKeys } from "~/queries/keys";
 import { useUIStore } from "~/hooks/useUIStore";
 import type { Email, Folder, Mailbox } from "~/types";
 
@@ -53,6 +55,11 @@ export default function EmailPanel({ emailId }: { emailId: string }) {
 	const { data: currentMailbox } = useMailbox(mailboxId) as {
 		data?: Mailbox;
 	};
+	const { data: config } = useQuery({ queryKey: queryKeys.config, queryFn: api.getConfig });
+	// Sender privacy is system-wide. Until an administrator saves that policy (privacy: null), each
+	// mailbox keeps its old rules. Both must load first so the reader never flashes remote content.
+	const privacySettings = config?.privacy ?? currentMailbox?.settings?.privacy;
+	const settingsLoaded = !!currentMailbox && !!config;
 	const { closePanel, startCompose } = useUIStore();
 	const toastManager = useKumoToastManager();
 	const [isSending, setIsSending] = useState(false);
@@ -215,8 +222,8 @@ export default function EmailPanel({ emailId }: { emailId: string }) {
 								email={msg}
 								mailboxId={mailboxId}
 								mailboxEmail={currentMailbox?.email}
-								privacySettings={currentMailbox?.settings?.privacy}
-								settingsLoaded={!!currentMailbox}
+								privacySettings={privacySettings}
+								settingsLoaded={settingsLoaded}
 								isLast={idx === allMessages.length - 1}
 								isDraft={isDraft}
 								isSending={isDraft ? isSending : false}
@@ -236,8 +243,8 @@ export default function EmailPanel({ emailId }: { emailId: string }) {
 					<SingleMessageView
 						email={email}
 						mailboxId={mailboxId}
-						privacySettings={currentMailbox?.settings?.privacy}
-						settingsLoaded={!!currentMailbox}
+						privacySettings={privacySettings}
+						settingsLoaded={settingsLoaded}
 						onPreviewImage={(url, filename) =>
 							setPreviewImage({ url, filename })
 						}

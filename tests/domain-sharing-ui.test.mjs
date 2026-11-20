@@ -21,15 +21,16 @@ import MailboxSettings from './app/routes/settings';
 import SystemHeader from './app/components/SystemHeader';
 import {canAccessMailbox} from './shared/access';
 import api from './app/services/api';
-const boxes = ['hr@zaku.net', 'jobs@zaku.net', 'hello@other.net'].map(email => ({id: email, email, name: email, settings: {privacy: {enabled: true, domains: ['example.org']}}}));
+// Mailboxes have no rules of their own: private reading comes from the system-wide sender policy.
+const boxes = ['hr@zaku.net', 'jobs@zaku.net', 'hello@other.net'].map(email => ({id: email, email, name: email, settings: {}}));
 let identity;
 let policy = {mode: 'listed', domains: ['other.net', 'zaku.net'], autoCreate: false};
 let keys = [];
-let systemSettings = {autoDraftRepliesEnabled: false, agentSystemPrompt: '', unreadBadgeStyle: 'count'};
+let systemSettings = {autoDraftRepliesEnabled: false, agentSystemPrompt: '', unreadBadgeStyle: 'count', privacy: {enabled: true, domains: ['example.org']}};
 export const actions = [];
 api.getSession = async () => identity;
 api.listMailboxes = async () => boxes.filter(box => canAccessMailbox(identity, box.email));
-api.getConfig = async () => ({domains: identity.role === 'share' ? [identity.scope === 'domain' ? identity.target : identity.target.split('@')[1]] : [...new Set([...policy.domains, ...boxes.map(box => box.email.split('@')[1])])], emailAddresses: [], acceptAll: policy.mode === 'all', unreadBadgeStyle: systemSettings.unreadBadgeStyle});
+api.getConfig = async () => ({domains: identity.role === 'share' ? [identity.scope === 'domain' ? identity.target : identity.target.split('@')[1]] : [...new Set([...policy.domains, ...boxes.map(box => box.email.split('@')[1])])], emailAddresses: [], acceptAll: policy.mode === 'all', unreadBadgeStyle: systemSettings.unreadBadgeStyle, privacy: systemSettings.privacy ?? null});
 api.getMailbox = async id => boxes.find(box => box.id === id);
 api.listFolders = async () => ['inbox', 'sent', 'draft', 'archive', 'trash'].map(id => ({id, name: id, unreadCount: id === 'inbox' ? 1 : 0}));
 const inboxes = Object.fromEntries(boxes.map((box, boxIndex) => [box.id, Array.from({length: boxIndex === 0 ? 2 : 1}, (_,index) => ({id: 'message-' + boxIndex + '-' + index, subject: index ? 'Magic link sign-in' : boxIndex === 0 ? 'Welcome to the team' : 'Interview schedule', sender: 'sender@example.org', recipient: box.id, date: '2026-11-20T00:00:00Z', read: false, starred: false, body: '<p>Hello reader</p><a href="https://login.example.test/magic?token=fixture">Sign in</a>', attachments: []}))]));
@@ -131,6 +132,7 @@ try {
 	assert.deepEqual(await railOrder(), ['hr@zaku.net', 'jobs@zaku.net'], 'mailboxes without newer mail keep alphabetical order');
 	await mailArea.getByText('Welcome to the team', {exact: true}).click();
 	await page.getByRole('region', {name: '邮件隐私阅读'}).waitFor();
+	assert.equal(await page.locator('iframe').count(), 0, 'the system sender policy protects mailboxes that never set rules');
 	await rail.getByRole('img', {name: 'hr@zaku.net：1 封未读邮件', exact: true}).waitFor();
 	assert.equal(await rail.isVisible(), true, 'mailbox rail must remain visible while a message is open');
 	const columns = await page.evaluate(() => {

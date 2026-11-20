@@ -17,7 +17,7 @@ const mf = new Miniflare({
 });
 const origin = 'https://mail.example.test';
 const mailboxes = ['first@example.com', 'second@example.com'];
-const defaults = { autoDraftRepliesEnabled: false, agentSystemPrompt: '', unreadBadgeStyle: 'count' };
+const defaults = { autoDraftRepliesEnabled: false, agentSystemPrompt: '', unreadBadgeStyle: 'count', privacy: { enabled: false, domains: [] } };
 const endpoint = '/api/v1/settings';
 let count = 0;
 async function request(path, { method = 'GET', body, cookie } = {}) {
@@ -66,7 +66,7 @@ try {
 		assert.equal((await request('/api/v1/mailboxes', { method: 'POST', body: { email: 'invalid@example.com', name: 'Invalid', settings } })).status, 400);
 	}
 	assert.equal((await set({ autoDraftRepliesEnabled: true, agentSystemPrompt: '  Global prompt  ' })).status, 200);
-	assert.deepEqual(await get(), { autoDraftRepliesEnabled: true, agentSystemPrompt: 'Global prompt', unreadBadgeStyle: 'count' }, 'settings saved without a badge style read as counts');
+	assert.deepEqual(await get(), { autoDraftRepliesEnabled: true, agentSystemPrompt: 'Global prompt', unreadBadgeStyle: 'count', privacy: { enabled: false, domains: [] } }, 'settings saved without a badge style read as counts');
 	assert.equal((await (await request('/__prompt')).json()).prompt, 'Global prompt');
 	const before = await (await bucket.get('settings/system.json')).text();
 	for (const invalid of [null, [], {}, { autoDraftRepliesEnabled: true }, { ...defaults, autoDraftRepliesEnabled: 'true' }, { ...defaults, agentSystemPrompt: null }, { ...defaults, agentSystemPrompt: 'x'.repeat(20_001) }, { ...defaults, unreadBadgeStyle: 'big' }, { ...defaults, other: true }]) {

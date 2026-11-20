@@ -90,7 +90,7 @@ try {
  assert.equal((await (await request('/auth/session', { cookie })).json()).role, 'mailbox');
  const mailboxes = await (await request('/api/v1/mailboxes', { cookie })).json();
  assert.deepEqual(mailboxes.map(m => m.email), ['contact@example.com']);
- assert.deepEqual(await (await request('/api/v1/config', { cookie })).json(), { domains: [], emailAddresses: [], unreadBadgeStyle: 'count' }, 'mailbox users see no domain data, only the shared badge style');
+ assert.deepEqual(await (await request('/api/v1/config', { cookie })).json(), { domains: [], emailAddresses: [], unreadBadgeStyle: 'count', privacy: null }, 'mailbox users see no domain data, only the shared badge style and sender policy');
  for (const suffix of ['', '/emails', '/settings', '/emails/test/attachments/test', '/login']) {
   assert.equal((await request('/api/v1/mailboxes/gidon@example.com' + suffix, { cookie })).status, 403, suffix);
  }

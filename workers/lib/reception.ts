@@ -28,7 +28,6 @@ export async function getReception(
 export function defaultMailboxSettings(name: string) {
 	return {
 		fromName: name,
-		privacy: { enabled: false, domains: [] },
 		forwarding: { enabled: false, email: "" },
 		signature: { enabled: false, text: "" },
 		autoReply: { enabled: false, subject: "", message: "" },

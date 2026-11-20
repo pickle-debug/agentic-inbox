@@ -12,6 +12,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Routes, Route } from 'react-router';
 import { Toasty, TooltipProvider } from '@cloudflare/kumo';
 import SettingsRoute from './app/routes/settings';
+import SystemSettingsRoute from './app/routes/system-settings';
 import api from './app/services/api';
 import EmailContent from './app/components/EmailContent';
 import SingleMessageView from './app/components/email-panel/SingleMessageView';
@@ -28,7 +29,20 @@ export function mount(body, view = 'single', locale = 'zh', options = {}) {
 let settingsMailbox = { id: 'reader@example.test', email: 'reader@example.test', name: 'Reader', settings: { privacy: {enabled: false, domains: []} } };
 export const saves = [];
 api.getMailbox = async () => settingsMailbox;
-api.updateMailbox = async (mailboxId, settings) => { saves.push(settings); settingsMailbox = {...settingsMailbox, settings: {...settingsMailbox.settings, ...settings}}; return settingsMailbox; };
+api.updateMailbox = async (mailboxId, settings) => { settingsMailbox = {...settingsMailbox, settings: {...settingsMailbox.settings, ...settings}}; return settingsMailbox; };
+// System settings own the sender policy; every API the page touches is mocked so the test stays offline.
+let systemSettings = { autoDraftRepliesEnabled: false, agentSystemPrompt: '', unreadBadgeStyle: 'count', privacy: { enabled: false, domains: [] } };
+let systemPrivacySaved = true;
+api.getSystemSettings = async () => systemSettings;
+api.updateSystemSettings = async settings => { saves.push(settings); systemSettings = settings; systemPrivacySaved = true; return settings; };
+api.getConfig = async () => ({ domains: [], emailAddresses: [], unreadBadgeStyle: systemSettings.unreadBadgeStyle, privacy: systemPrivacySaved ? systemSettings.privacy : null });
+api.getReception = async () => ({ mode: 'listed', domains: ['example.test'], autoCreate: false });
+export function offerLegacyRules(domains) { systemSettings = { ...systemSettings, privacy: { enabled: true, domains } }; systemPrivacySaved = false; }
+export function mountSystemSettings() {
+ const client = new QueryClient({defaultOptions: {queries: {retry: false, staleTime: Infinity}}});
+ client.setQueryData(['session'], {role: 'admin', email: 'admin@example.test'});
+ root.render(<I18nProvider key={'system-' + Math.random()} initialLocale="zh"><QueryClientProvider client={client}><MemoryRouter initialEntries={['/settings']}><TooltipProvider><Toasty><Routes><Route path="/settings" element={<SystemSettingsRoute/>}/></Routes></Toasty></TooltipProvider></MemoryRouter></QueryClientProvider></I18nProvider>);
+}
 export function mountSettings() {
  const client = new QueryClient({defaultOptions: {queries: {retry: false, staleTime: Infinity}}});
  client.setQueryData(['session'], {role: 'admin', email: 'admin@example.test'});
@@ -149,10 +163,19 @@ try {
 	assert.equal(requests.length, 2, 'only explicitly tested nonmatching messages may load images');
 	await page.evaluate(() => privacyProbe.mount('<p>Privacy disabled</p>', 'single', 'zh', { privacySettings: {enabled: false, domains: ['example.test']} }));
 	await page.frameLocator('iframe').getByText('Privacy disabled', { exact: true }).waitFor();
+	// Mailboxes no longer have their own rules; the settings page points to System settings.
 	await page.evaluate(() => privacyProbe.mountSettings());
-	const toggle = page.getByRole('checkbox', { name: '对指定发件人域名启用隐私阅读' });
-	await toggle.waitFor();
-	assert.equal(await toggle.isChecked(), false);
+	await page.getByText('邮件隐私保护（指定发件人域名不渲染）已改为对所有邮箱统一配置：').waitFor();
+	assert.equal(await page.getByRole('link', { name: '系统设置' }).getAttribute('href'), '/settings');
+	assert.equal(await page.getByRole('checkbox', { name: '对指定发件人域名启用隐私阅读' }).count(), 0);
+	// Before the system policy is saved, System settings offers the rules mailboxes used before.
+	await page.evaluate(() => { privacyProbe.offerLegacyRules(['legacy.test']); privacyProbe.mountSystemSettings(); });
+	await page.getByText('已预填各邮箱原来单独设置的域名，保存后对所有邮箱生效。').waitFor();
+	assert.equal(await page.getByRole('textbox', { name: '发件人域名', exact: true }).inputValue(), 'legacy.test');
+	await page.getByRole('textbox', { name: '发件人域名', exact: true }).fill('');
+	const toggle = page.getByRole('checkbox', { name: '所有邮箱对以下发件人域名启用隐私阅读' });
+	assert.equal(await toggle.isChecked(), true);
+	await toggle.uncheck();
 	await toggle.check();
 	await page.getByRole('button', { name: '保存更改', exact: true }).click();
 	await page.getByRole('alert').filter({ hasText: '请至少填写一个发件人域名' }).waitFor();
@@ -161,20 +184,21 @@ try {
 	await page.getByRole('button', { name: '保存更改', exact: true }).click();
 	await page.waitForFunction(() => privacyProbe.saves.length === 1);
 	assert.deepEqual(await page.evaluate(() => privacyProbe.saves[0].privacy), { enabled: true, domains: ['example.test', 'mail.example.org'] });
-	await page.waitForFunction(() => document.getElementById('privacy-domains').value === 'example.test\nmail.example.org');
+	await page.waitForFunction(() => document.getElementById('system-privacy-domains').value === 'example.test\nmail.example.org');
+	await page.getByText('已预填各邮箱原来单独设置的域名，保存后对所有邮箱生效。').waitFor({ state: 'detached' });
 	await toggle.uncheck();
 	await page.getByRole('button', { name: '保存更改', exact: true }).click();
 	await page.waitForFunction(() => privacyProbe.saves.length === 2);
 	assert.deepEqual(await page.evaluate(() => privacyProbe.saves[1].privacy), { enabled: false, domains: ['example.test', 'mail.example.org'] });
 	await page.evaluate(() => privacyProbe.mount('<p>Unmount settings</p>'));
 	await page.getByRole('region', { name: '邮件隐私阅读' }).waitFor();
-	await page.evaluate(() => privacyProbe.mountSettings());
+	await page.evaluate(() => privacyProbe.mountSystemSettings());
 	await toggle.waitFor();
 	assert.equal(await toggle.isChecked(), false);
 	assert.equal(await page.getByRole('textbox', { name: '发件人域名', exact: true }).inputValue(), 'example.test\nmail.example.org');
 	assert.deepEqual(errors, []);
 	assert.equal(requests.length, 2);
-	console.log('PASS: Chromium private reading makes ZERO external requests; exact magic tokens, copy/source, policy-loading protection, matched/subdomain/nonmatching/disabled rules in both reading views, normal HTML images, settings toggle, validation, domain normalization, save/reload and retained disabled list.');
+	console.log('PASS: Chromium private reading makes ZERO external requests; exact magic tokens, copy/source, policy-loading protection, matched/subdomain/nonmatching/disabled rules in both reading views, normal HTML images, system-wide settings toggle (mailbox pages point there), old-rule pre-fill, validation, domain normalization, save/reload and retained disabled list.');
 } finally {
 	await browser?.close();
 }

@@ -19,13 +19,12 @@ import { handleReplyEmail, handleForwardEmail } from "./routes/reply-forward";
 import { contactRoutes } from "./routes/contacts";
 import { mailboxPasswordRoutes } from "./routes/mailbox-password";
 import { systemSettingsSchema } from "../shared/system-settings";
-import { getSystemSettings, SYSTEM_SETTINGS_KEY } from "./lib/system-settings";
+import { getSystemSettings, legacyMailboxPrivacy, SYSTEM_SETTINGS_KEY } from "./lib/system-settings";
 import { authStore } from "./auth";
 import { bodyLimit } from "hono/body-limit";
 import { Folders } from "../shared/folders";
 import { forwardingSettingsSchema } from "../shared/forwarding";
 import { autoReplySettingsSchema } from "../shared/automatic-replies";
-import { emailPrivacySettingsSchema } from "../shared/email-privacy";
 import { canAccessMailbox, shareInputSchema, mailboxAddressSchema } from "../shared/access";
 import { mailboxSummaries, rememberMailboxName } from "./inbox-index";
 import { acceptsDomain, receptionSchema } from "../shared/reception";
@@ -47,13 +46,14 @@ const CreateMailboxBody = z.object({
 
 function mailboxSettingsSchema(mailboxId: string) {
 	return z.object({
-		privacy: emailPrivacySettingsSchema.optional(),
 		forwarding: forwardingSettingsSchema(mailboxId).optional(),
 		autoReply: autoReplySettingsSchema.optional(),
 	}).passthrough().superRefine((settings, ctx) => {
 		for (const key of ["autoDraftRepliesEnabled", "agentSystemPrompt"]) {
 			if (Object.hasOwn(settings, key)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: [key], message: "AI 配置只能在系统设置中修改。" });
 		}
+		// Sender privacy is one system-wide policy; old per-mailbox rules are only read for migration.
+		if (Object.hasOwn(settings, "privacy")) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["privacy"], message: "邮件隐私保护已改为系统设置，请在系统设置中修改。" });
 	});
 }
 
@@ -137,12 +137,19 @@ app.use("/api/v1/settings", async (c, next) => {
 	if (c.var.identity.role !== "admin") return c.json({ error: "仅管理员可访问系统设置。" }, 403);
 	return next();
 });
-app.get("/api/v1/settings", async (c) => c.json(await getSystemSettings(c.env)));
+app.get("/api/v1/settings", async (c) => {
+	const settings = await getSystemSettings(c.env);
+	// Until the system-wide sender policy is saved, start from the rules mailboxes had enabled.
+	return c.json({ ...settings, privacy: settings.privacy ?? await legacyMailboxPrivacy(c.env) });
+});
 app.put("/api/v1/settings", async (c) => {
 	const body = systemSettingsSchema.safeParse(await c.req.json().catch(() => null));
 	if (!body.success) return c.json({ error: body.error.issues[0].message }, 400);
-	await c.env.BUCKET.put(SYSTEM_SETTINGS_KEY, JSON.stringify(body.data));
-	return c.json(body.data);
+	// Sender privacy is a protection: a client that omits it must not silently switch it off.
+	const settings = body.data.privacy !== undefined ? body.data
+		: { ...body.data, privacy: (await getSystemSettings(c.env).catch(() => null))?.privacy };
+	await c.env.BUCKET.put(SYSTEM_SETTINGS_KEY, JSON.stringify(settings));
+	return c.json(settings);
 });
 
 app.use("/api/v1/reception", async (c, next) => c.var.identity.role === "admin" ? next() : c.json({error: "仅管理员可配置收信策略。"}, 403));
@@ -173,15 +180,18 @@ app.delete("/api/v1/shares/:id", async c => { await authStore(c.env).revokeShare
 // -- Config ---------------------------------------------------------
 
 app.get("/api/v1/config", async (c) => {
-	// Every viewer needs the administrator's badge style; the rest of the system settings stay admin-only.
-	// A damaged settings file must not break mailbox navigation, so it falls back to counts.
-	const [reception, unreadBadgeStyle] = await Promise.all([getReception(c.env), getSystemSettings(c.env).then(settings => settings.unreadBadgeStyle, () => "count" as const)]);
+	// Every viewer needs the badge style and the sender privacy policy; the rest of the system
+	// settings stay admin-only. privacy null = no system policy saved yet, so readers keep each
+	// mailbox's old rules. Unreadable settings fall back to counts and an always-private policy.
+	const [reception, system] = await Promise.all([getReception(c.env), getSystemSettings(c.env).catch(() => null)]);
+	const unreadBadgeStyle = system?.unreadBadgeStyle ?? "count";
+	const privacy = system ? system.privacy ?? null : { enabled: true, domains: [] };
 	const identity = c.var.identity;
-	if (identity.role === "mailbox") return c.json({domains: [], emailAddresses: [], unreadBadgeStyle});
+	if (identity.role === "mailbox") return c.json({domains: [], emailAddresses: [], unreadBadgeStyle, privacy});
 	const visible = (await listMailboxes(c.env.BUCKET)).filter(m => canAccessMailbox(identity, m.email));
 	const domains = [...new Set([...(identity.role === "admin" ? reception.domains : []), ...visible.map(m => m.email.split("@")[1]), ...(identity.role === "share" && identity.scope === "domain" ? [identity.target] : [])])].sort();
 	const emailAddresses = c.env.EMAIL_ADDRESSES ?? [];
-	return c.json({ domains, emailAddresses: identity.role === "admin" ? emailAddresses : [], acceptAll: identity.role === "admin" && reception.mode === "all", unreadBadgeStyle });
+	return c.json({ domains, emailAddresses: identity.role === "admin" ? emailAddresses : [], acceptAll: identity.role === "admin" && reception.mode === "all", unreadBadgeStyle, privacy });
 });
 
 // -- Mailboxes ------------------------------------------------------

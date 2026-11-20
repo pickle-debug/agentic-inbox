@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useEffect, useState } from "react";
 import { Navigate } from "react-router";
 import { systemSettingsSchema, type SystemSettings } from "../../shared/system-settings";
+import { emailPrivacySettingsSchema } from "../../shared/email-privacy";
 import { useI18n } from "~/hooks/useI18n";
 import api from "~/services/api";
 import ReceptionSettings from "~/components/ReceptionSettings";
@@ -18,24 +19,33 @@ export default function SystemSettingsRoute() {
 	const queryClient = useQueryClient();
 	const session = useQuery({ queryKey: ["session"], queryFn: api.getSession });
 	const settings = useQuery({ queryKey: ["system-settings"], queryFn: api.getSystemSettings, enabled: session.data?.role === "admin" });
+	const config = useQuery({ queryKey: queryKeys.config, queryFn: api.getConfig, enabled: session.data?.role === "admin" });
 	const [draft, setDraft] = useState<SystemSettings | null>(null);
+	const [privacyText, setPrivacyText] = useState<string | null>(null);
+	const [privacyError, setPrivacyError] = useState("");
 	const [saving, setSaving] = useState(false);
 	const [error, setError] = useState("");
 	useEffect(() => { document.title = `${t("System settings", "系统设置")} · Agentic Inbox`; }, [t]);
 	const values = draft ?? settings.data;
+	const privacy = values?.privacy ?? { enabled: false, domains: [] };
+	const privacyDomains = privacyText ?? privacy.domains.join("\n");
 	const save = async (event: FormEvent) => {
 		event.preventDefault();
 		if (!values || saving) return;
 		setError("");
-		const parsed = systemSettingsSchema.safeParse(values);
+		const privacyResult = emailPrivacySettingsSchema.safeParse({ enabled: privacy.enabled, domains: privacyDomains.split(/[\s,，;；]+/).filter(Boolean) });
+		setPrivacyError(privacyResult.success ? "" : message(privacyResult.error.issues[0].message));
+		if (!privacyResult.success) return;
+		const parsed = systemSettingsSchema.safeParse({ ...values, privacy: privacyResult.data });
 		if (!parsed.success) { setError(message(parsed.error.issues[0].message)); return; }
 		setSaving(true);
 		try {
 			const saved = await api.updateSystemSettings(parsed.data);
 			queryClient.setQueryData(["system-settings"], saved);
-			// Badges read the style from the shared config, so refresh it right away.
+			// Badges and readers take the style and sender policy from the shared config.
 			void queryClient.invalidateQueries({ queryKey: queryKeys.config });
 			setDraft(null);
+			setPrivacyText(null);
 			toast.add({ title: t("Settings saved!", "设置已保存！") });
 		} catch (err) {
 			setError(err instanceof Error ? message(err.message) : t("Failed to save settings", "保存设置失败"));
@@ -45,7 +55,7 @@ export default function SystemSettingsRoute() {
 	const loadError = session.error || settings.error;
 	return <main className="mx-auto w-full max-w-2xl px-4 py-8 md:px-6 md:py-12">
 		<h1 className="text-2xl font-semibold">{t("System settings", "系统设置")}</h1>
-		<p className="mt-2 text-sm text-kumo-subtle">{t("Configure receiving domains, the AI assistant and unread alerts for all mailboxes.", "管理收信域名、自动建箱、所有邮箱的 AI 助手及未读提示。")}</p>
+		<p className="mt-2 text-sm text-kumo-subtle">{t("Configure receiving domains, and the AI assistant, email privacy and unread alerts for all mailboxes.", "管理收信域名、自动建箱，以及所有邮箱的 AI 助手、邮件隐私保护和未读提示。")}</p>
 		{session.data?.role === "admin" && <ReceptionSettings />}
 		{loadError ? <div className="mt-6 space-y-3">
 			<p role="alert" className="text-sm text-kumo-error">{message(loadError.message)}</p>
@@ -65,6 +75,20 @@ export default function SystemSettingsRoute() {
 					<textarea id="system-agent-prompt" value={values.agentSystemPrompt} onChange={(event) => setDraft({ ...values, agentSystemPrompt: event.target.value })} maxLength={20000} rows={12} aria-describedby="system-agent-prompt-help" placeholder={t("Leave empty to use the built-in default prompt.", "留空使用内置默认提示词。")}
 						className="w-full resize-y rounded-lg border border-kumo-line bg-kumo-recessed px-3 py-2 text-sm text-kumo-default placeholder:text-kumo-subtle focus:outline-none focus:ring-1 focus:ring-kumo-ring disabled:opacity-50" />
 				</div>
+				<section className="border-t border-kumo-line pt-5" aria-labelledby="system-privacy-heading">
+					<h2 id="system-privacy-heading" className="text-sm font-medium">{t("Email privacy", "邮件隐私保护")}</h2>
+					<label className="mt-3 flex cursor-pointer items-start gap-3">
+						<input type="checkbox" checked={privacy.enabled} onChange={(event) => { setDraft({ ...values, privacy: { ...privacy, enabled: event.target.checked } }); setPrivacyError(""); }} className="mt-0.5 size-4 shrink-0 accent-kumo-accent" />
+						<span className="text-sm">{t("Use private reading for these sender domains in every mailbox", "所有邮箱对以下发件人域名启用隐私阅读")}</span>
+					</label>
+					<p className="mt-2 text-xs text-kumo-subtle">{t("Applies to every mailbox, including shared access. Matching messages show text, extracted links and HTML source without rendering HTML or loading remote content. Other messages display normally.", "对所有邮箱生效，包括分享访问。匹配的邮件仅显示文本、提取的链接及 HTML 源码，不渲染 HTML、不加载远程内容；其他邮件正常显示。")}</p>
+					{config.data?.privacy === null && privacy.domains.length > 0 && <p className="mt-2 text-xs text-kumo-warning">{t("Pre-filled with the rules individual mailboxes used before. Save to apply them to every mailbox.", "已预填各邮箱原来单独设置的域名，保存后对所有邮箱生效。")}</p>}
+					<label htmlFor="system-privacy-domains" className="mt-4 mb-2 block text-sm">{t("Sender domains", "发件人域名")}</label>
+					<textarea id="system-privacy-domains" value={privacyDomains} rows={4} maxLength={25500} placeholder={"example.com\nmail.example.org"} aria-invalid={!!privacyError} aria-describedby={privacyError ? "system-privacy-help system-privacy-error" : "system-privacy-help"} onChange={(event) => { setPrivacyText(event.target.value); setPrivacyError(""); }}
+						className="w-full resize-y rounded-lg border border-kumo-line bg-kumo-recessed px-3 py-2 text-sm text-kumo-default placeholder:text-kumo-subtle focus:outline-none focus:ring-1 focus:ring-kumo-ring disabled:opacity-50" />
+					<p id="system-privacy-help" className="mt-2 text-xs text-kumo-subtle">{t("One domain per line, or separate with commas. Includes subdomains: example.com also matches mail.example.com. Enter domains only, without @, URLs or wildcards. Up to 100 domains; the list is kept when switched off.", "每行一个，也可用逗号分隔。包含子域名：example.com 同时匹配 mail.example.com。仅填写域名，不含 @、网址或通配符。最多 100 个，关闭后保留名单。")}</p>
+					{privacyError && <p id="system-privacy-error" role="alert" className="mt-2 text-xs text-kumo-error">{privacyError}</p>}
+				</section>
 				<fieldset className="border-t border-kumo-line pt-5" aria-describedby="unread-badge-style-help">
 					<legend className="float-left w-full text-sm font-medium">{t("Unread alerts", "未读提示")}</legend>
 					<p id="unread-badge-style-help" className="clear-left pt-1 text-xs text-kumo-subtle">{t("How mailboxes with unread mail are marked in the mailbox list, for everyone who uses this inbox, including shared visitors.", "邮箱有未读邮件时，在邮箱列表中的提示样式。对所有使用者生效，包括分享访客。")}</p>

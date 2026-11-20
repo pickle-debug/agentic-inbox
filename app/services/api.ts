@@ -5,6 +5,7 @@
 import type { Email, Folder, Mailbox, MailboxSummary } from "~/types";
 import type { Contact, ContactInput, ContactList } from "../../shared/contacts";
 import type { SystemSettings, UnreadBadgeStyle } from "../../shared/system-settings";
+import type { EmailPrivacySettings } from "../../shared/email-privacy";
 import type { Identity, ShareInfo, ShareInput } from "../../shared/access";
 import type { ReceptionSettings } from "../../shared/reception";
 
@@ -127,7 +128,7 @@ const api = {
 	deleteContact: (id: string) => del<void>(`/api/v1/contacts/${encodeURIComponent(id)}`),
 	// Config
 	getConfig: () =>
-		get<{ domains: string[]; emailAddresses: string[]; acceptAll: boolean; unreadBadgeStyle?: UnreadBadgeStyle }>("/api/v1/config"),
+		get<{ domains: string[]; emailAddresses: string[]; acceptAll?: boolean; unreadBadgeStyle?: UnreadBadgeStyle; privacy?: EmailPrivacySettings | null }>("/api/v1/config"),
 
 	// Mailboxes
 	listMailboxes: () => get<Mailbox[]>("/api/v1/mailboxes"),

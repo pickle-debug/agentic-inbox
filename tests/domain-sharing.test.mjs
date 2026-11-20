@@ -64,7 +64,7 @@ try {
 	assert.ok((await json('/api/v1/config')).domains.includes('new.net'));
 	assert.ok((await json('/api/v1/config')).domains.includes('empty.net'));
 	assert.equal((await json('/api/v1/config')).acceptAll, true);
-	await request(mailbox('dev@new.net'), {method: 'PUT', body: {settings: {fromName: 'Preserve me', privacy: {enabled: true, domains: ['example.org']}}}});
+	assert.equal((await request(mailbox('dev@new.net'), {method: 'PUT', body: {settings: {fromName: 'Preserve me', autoReply: {enabled: false, subject: '', message: ''}}}})).status, 200);
 	await receive('dev@new.net');
 	assert.equal((await json(mailbox('dev@new.net'))).settings.fromName, 'Preserve me');
 	assert.deepEqual([(await devSummary()).unreadCount, (await devSummary()).name], [7, 'Preserve me'], 'new mail and renamed mailboxes reach the badge index');
