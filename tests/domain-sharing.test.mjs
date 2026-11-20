@@ -10,7 +10,7 @@ const dir = await mkdtemp(join(tmpdir(), 'inbox-domain-sharing-'));
 let mf;
 try {
 	await build({entryPoints: ['tests/domain-sharing-worker.ts'], outfile: join(dir, 'worker.mjs'), bundle: true, format: 'esm', platform: 'node', external: ['cloudflare:*'], conditions: ['workerd', 'worker', 'browser'], define: {'process.env.NODE_ENV': '"test"'}});
-	mf = new Miniflare({modules: true, modulesRoot: dir, scriptPath: join(dir, 'worker.mjs'), compatibilityDate: '2025-11-28', compatibilityFlags: ['nodejs_compat'], outboundService: () => new Response('External network disabled', {status: 403}), bindings: {DOMAINS: 'example.com', EMAIL_ADDRESSES: [], DEV_ADMIN_EMAIL: 'admin@example.net'}, r2Buckets: ['BUCKET'], durableObjects: {AUTH: {className: 'AuthStore', useSQLite: true}, MAILBOX: {className: 'MailboxDO', useSQLite: true}, EMAIL_AGENT: {className: 'EmailAgent', useSQLite: true}}});
+	mf = new Miniflare({modules: true, modulesRoot: dir, scriptPath: join(dir, 'worker.mjs'), compatibilityDate: '2025-11-28', compatibilityFlags: ['nodejs_compat'], outboundService: () => new Response('External network disabled', {status: 403}), bindings: {DOMAINS: 'example.com', EMAIL_ADDRESSES: [], DEV_ADMIN_EMAIL: 'admin@example.net'}, r2Buckets: ['BUCKET'], durableObjects: {AUTH: {className: 'AuthStore', useSQLite: true}, MAILBOX: {className: 'MailboxDO', useSQLite: true}, EMAIL_AGENT: {className: 'EmailAgent', useSQLite: true}, INBOX_INDEX: {className: 'InboxIndex', useSQLite: true}}});
 	const origin = 'https://mail.example.test';
 	const request = (path, {method = 'GET', body, cookie, key, headers = {}, redirect = 'manual'} = {}) => mf.dispatchFetch(origin + path, {method, redirect, headers: {Origin: origin, 'Content-Type': 'application/json', ...(cookie ? {Cookie: cookie} : {}), ...(key ? {Authorization: `Bearer ${key}`} : {}), ...headers}, ...(body === undefined ? {} : {body: JSON.stringify(body)})});
 	const json = async (path, options) => {const res = await request(path, options); assert.equal(res.status, 200, path); return res.json();};
@@ -33,17 +33,41 @@ try {
 	assert.equal(initialSummary.unreadCount, 1);
 	assert.equal(initialSummary.latestSubject, 'Fixture');
 	assert.equal(initialSummary.name, 'hr');
+	// Badge polling reads the shared index: a change that bypasses the mailbox's publish hook stays invisible…
+	assert.equal((await request('/__silent-read?mailbox=hr%40zaku.net', {method: 'POST'})).status, 200);
+	assert.equal((await json('/api/v1/mailboxes?summary=true'))[0].unreadCount, 1, 'polling must read the index instead of every mailbox');
+	// …until the index has no row for the mailbox; then the mailbox reports once and its name is backfilled.
+	assert.equal((await request('/__index/clear', {method: 'POST'})).status, 200);
+	const backfilled = (await json('/api/v1/mailboxes?summary=true'))[0];
+	assert.deepEqual([backfilled.unreadCount, backfilled.latestSubject, backfilled.name], [0, 'Fixture', 'hr']);
+	// Real writes publish before responding, so an immediate refresh already reflects them.
+	const [firstMessage] = (await json(mailbox('hr@zaku.net') + '/emails?folder=inbox')).emails;
+	assert.equal((await request(mailbox('hr@zaku.net') + '/emails/' + firstMessage.id, {method: 'PUT', body: {read: false}})).status, 200);
+	assert.equal((await json('/api/v1/mailboxes?summary=true'))[0].unreadCount, 1, 'marking unread must update the badge immediately');
+	// An index outage never fails the mail write; the mailbox schedules a retry that repairs the badge.
+	await request('/__index/fail?on=1', {method: 'POST'});
+	assert.equal((await request(mailbox('hr@zaku.net') + '/emails/' + firstMessage.id, {method: 'PUT', body: {read: true}})).status, 200);
+	assert.equal((await json(mailbox('hr@zaku.net') + '/emails/' + firstMessage.id)).read, true);
+	assert.equal((await json('/__retry?mailbox=hr%40zaku.net')).scheduled, true, 'a failed index update must schedule a retry');
+	await request('/__index/fail?on=0', {method: 'POST'});
+	assert.equal((await json('/__retry?mailbox=hr%40zaku.net', {method: 'POST'})).scheduled, false);
+	assert.equal((await json('/api/v1/mailboxes?summary=true'))[0].unreadCount, 0, 'the retry must publish the current count');
+	assert.equal((await request(mailbox('hr@zaku.net') + '/emails/' + firstMessage.id, {method: 'PUT', body: {read: false}})).status, 200);
+	assert.equal((await json('/api/v1/mailboxes?summary=true'))[0].unreadCount, 1);
 	await receive('x@fakezaku.net'); await receive('x@sub.zaku.net');
 	assert.equal((await json('/api/v1/mailboxes')).length, 1, 'reception is exact-domain, not loose suffix or subdomain matching');
 	assert.equal((await setReception({mode: 'all', domains: ['empty.net'], autoCreate: true})).status, 200);
 	await Promise.all(Array.from({length: 6}, () => receive('dev@new.net')));
 	assert.equal((await json(mailbox('dev@new.net') + '/emails?folder=inbox')).totalCount, 6);
+	const devSummary = async () => (await json('/api/v1/mailboxes?summary=true')).find(m => m.email === 'dev@new.net');
+	assert.equal((await devSummary()).unreadCount, 6, 'concurrent deliveries publish in order, so the newest count wins');
 	assert.ok((await json('/api/v1/config')).domains.includes('new.net'));
 	assert.ok((await json('/api/v1/config')).domains.includes('empty.net'));
 	assert.equal((await json('/api/v1/config')).acceptAll, true);
 	await request(mailbox('dev@new.net'), {method: 'PUT', body: {settings: {fromName: 'Preserve me', privacy: {enabled: true, domains: ['example.org']}}}});
 	await receive('dev@new.net');
 	assert.equal((await json(mailbox('dev@new.net'))).settings.fromName, 'Preserve me');
+	assert.deepEqual([(await devSummary()).unreadCount, (await devSummary()).name], [7, 'Preserve me'], 'new mail and renamed mailboxes reach the badge index');
 	await receive('excluded@new.net', {allowedAddresses: ['hr@zaku.net']});
 	assert.equal((await request(mailbox('excluded@new.net'))).status, 404);
 	const before = await json('/api/v1/reception');
@@ -140,5 +164,5 @@ try {
 	assert.deepEqual((await json('/api/v1/config', {key: empty.token})).domains, ['empty.net']);
 	assert.equal((await request('/api/v1/shares', {method: 'POST', body: {scope: 'domain', target: 'unknown.net', permission: 'read', label: 'Unknown', days: 1}})).status, 400);
 	assert.equal((await request(mailbox('jobs@zaku.net') + '/drafts', {key: empty.token, method: 'POST', headers: {Origin: 'https://evil.example.test'}, body: {body: 'Denied'}})).status, 403);
-	console.log('PASS: app-managed domains/all reception, first-mail/concurrent provisioning, exact envelope routing, empty groups, preserved settings, address restrictions, hashed scoped keys, permission matrix, domain/mailbox isolation, URL-to-secure-session exchange, expiry, revocation, no admin/AI/MCP escalation, deleted-mailbox protection and old-key revocation. No external email or network.');
+	console.log('PASS: app-managed domains/all reception, first-mail/concurrent provisioning, exact envelope routing, empty groups, preserved settings, address restrictions, hashed scoped keys, permission matrix, domain/mailbox isolation, URL-to-secure-session exchange, expiry, revocation, no admin/AI/MCP escalation, deleted-mailbox protection, old-key revocation, and an Inbox badge index (no per-mailbox polling, immediate updates, ordered concurrent deliveries, renames, backfill and outage retry). No external email or network.');
 } finally { await mf?.dispose(); await rm(dir, {recursive: true, force: true}); }

@@ -15,6 +15,7 @@ export { EmailAgent } from "./agent";
 export { EmailMCP } from "./mcp";
 export { AuthStore } from "./auth/store";
 export { ContactsStore } from "./contacts/store";
+export { InboxIndex } from "./inbox-index/store";
 
 declare module "react-router" {
 	export interface AppLoadContext {

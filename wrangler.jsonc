@@ -40,6 +40,8 @@
 		"bindings": [
 			{ "name": "AUTH", "class_name": "AuthStore" },
 			{ "name": "CONTACTS", "class_name": "ContactsStore" },
+			// 收件箱未读汇总：每个邮箱写入后推送，刷新角标只读这一个对象。
+			{ "name": "INBOX_INDEX", "class_name": "InboxIndex" },
 			{
 				"name": "MAILBOX",
 				"class_name": "MailboxDO"
@@ -74,6 +76,7 @@
 			]
 		},
 		{ "tag": "v4", "new_sqlite_classes": ["AuthStore"] },
-		{ "tag": "v5", "new_sqlite_classes": ["ContactsStore"] }
+		{ "tag": "v5", "new_sqlite_classes": ["ContactsStore"] },
+		{ "tag": "v6", "new_sqlite_classes": ["InboxIndex"] }
 	]
 }

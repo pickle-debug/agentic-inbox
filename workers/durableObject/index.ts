@@ -10,6 +10,7 @@ import * as schema from "../db/schema";
 import { Folders } from "../../shared/folders";
 import type { Env } from "../types";
 import type { InboxSummary } from "../../shared/mailbox-summary";
+import { inboxIndex } from "../inbox-index";
 import { applyMigrations, mailboxMigrations } from "./migrations";
 
 /**
@@ -523,6 +524,7 @@ export class MailboxDO extends DurableObject<Env> {
 			.set(data)
 			.where(eq(schema.emails.id, id))
 			.run();
+		await this.#inboxChanged();
 
 		return this.getEmail(id);
 	}
@@ -532,6 +534,7 @@ export class MailboxDO extends DurableObject<Env> {
 			`UPDATE emails SET read = 1 WHERE thread_id = ? AND read = 0`,
 			threadId,
 		);
+		await this.#inboxChanged();
 		return { threadId, markedRead: true };
 	}
 
@@ -557,6 +560,7 @@ export class MailboxDO extends DurableObject<Env> {
 			.delete(schema.emails)
 			.where(eq(schema.emails.id, id))
 			.run();
+		await this.#inboxChanged();
 
 		return emailAttachments;
 	}
@@ -580,6 +584,52 @@ export class MailboxDO extends DurableObject<Env> {
 		).one();
 		const latest = this.ctx.storage.sql.exec<{subject: string}>("SELECT subject FROM emails WHERE folder_id = ? ORDER BY date DESC, id DESC LIMIT 1", Folders.INBOX).toArray()[0];
 		return {...row, latestSubject: latest?.subject ?? null};
+	}
+
+	// ── Inbox badge index ──────────────────────────────────────────
+	// Every write that can change the Inbox pushes its summary to the shared InboxIndex, so badge
+	// polling reads one object instead of every mailbox. Pushes run one at a time in write order
+	// and each sends the state at send time, so a slow push can never overwrite a newer one.
+
+	#publishQueue: Promise<unknown> = Promise.resolve();
+	#published: string | null = null;
+
+	#publishInboxSummary(): Promise<InboxSummary> {
+		const run = this.#publishQueue.then(async () => {
+			const summary = this.getInboxSummary();
+			const serialized = JSON.stringify(summary);
+			const index = inboxIndex(this.env);
+			if (index && serialized !== this.#published) {
+				await index.putSummary(this.ctx.id.toString(), summary);
+				this.#published = serialized;
+			}
+			return summary;
+		});
+		this.#publishQueue = run.catch(() => undefined);
+		return run;
+	}
+
+	/** Awaited by writes so an immediate badge refresh already sees the change; never fails the write. */
+	async #inboxChanged() {
+		try {
+			await this.#publishInboxSummary();
+		} catch (err) {
+			console.error("Inbox index update failed; retrying from an alarm", err);
+			await this.ctx.storage.setAlarm(Date.now() + 30_000);
+		}
+	}
+
+	/** Retries a failed index update. Throwing makes the runtime retry the alarm with backoff. */
+	async alarm() {
+		this.#published = null;
+		await this.#publishInboxSummary();
+	}
+
+	/** Backfill for mailboxes the index has not heard from; always returns the current summary. */
+	async syncInboxSummary(): Promise<InboxSummary> {
+		this.#published = null;
+		await this.#inboxChanged();
+		return this.getInboxSummary();
 	}
 
 	async getFolders() {
@@ -655,6 +705,7 @@ export class MailboxDO extends DurableObject<Env> {
 			.set({ folder_id: folderId })
 			.where(eq(schema.emails.id, id))
 			.run();
+		await this.#inboxChanged();
 
 		return true;
 	}
@@ -893,5 +944,6 @@ export class MailboxDO extends DurableObject<Env> {
 		if (attachments.length > 0) {
 			this.db.insert(schema.attachments).values(attachments).run();
 		}
+		await this.#inboxChanged();
 	}
 }

@@ -19,9 +19,9 @@ export function useMailboxSummaries() {
 	return useQuery<MailboxSummary[]>({
 		queryKey: ["mailbox-summaries"],
 		queryFn: api.listMailboxSummaries,
-		// Every poll asks each visible mailbox for its Inbox count. Up to 30 mailboxes refresh every
-		// 15s; larger lists back off to at most 60s. Hidden tabs pause polling (TanStack default).
-		refetchInterval: query => Math.min(60_000, Math.max(15_000, (query.state.data?.length ?? 0) * 500)),
+		// Served from the shared Inbox index, so a poll costs the same for any number of mailboxes.
+		// Hidden tabs pause polling (TanStack default).
+		refetchInterval: 15_000,
 	});
 }
 
