@@ -74,7 +74,7 @@ export default function EmailPanelToolbar({
 				icon={<ArrowLeftIcon size={18} />}
 				onClick={onBack}
 				aria-label={t("Back to list", "返回列表")}
-				className="lg:hidden shrink-0"
+				className="split:hidden shrink-0"
 			/>
 
 			{writable && <>
@@ -195,7 +195,7 @@ export default function EmailPanelToolbar({
 						icon={<XIcon size={18} />}
 						onClick={onBack}
 						aria-label={t("Close", "关闭")}
-						className="hidden lg:inline-flex"
+						className="hidden split:inline-flex"
 					/>
 				</Tooltip>
 			</div>

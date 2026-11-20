@@ -12,7 +12,7 @@ import { Navigate, Link, useSearchParams } from "react-router";
 import { MailboxPasswordDialog } from "~/components/MailboxPasswordDialog";
 import ShareDialog from "~/components/ShareDialog";
 import { useMailboxSummaries, useCreateMailbox, useDeleteMailbox } from "~/queries/mailboxes";
-import UnreadBadge, { UnreadBadgePreference } from "~/components/UnreadBadge";
+import UnreadBadge from "~/components/UnreadBadge";
 import { useUnreadBadgeStyle } from "~/hooks/useUnreadBadgeStyle";
 import { useI18n } from "~/hooks/useI18n";
 import api from "~/services/api";
@@ -93,7 +93,6 @@ export default function HomeRoute() {
 					</p>
 				</div>
 				<div className="flex flex-wrap items-center gap-2">
-					<UnreadBadgePreference/>
 					{admin && (
 						<Button
 							size="sm"

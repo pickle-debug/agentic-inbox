@@ -24,21 +24,21 @@ export default function MailboxSplitView({
 	isComposing = isComposing && writable;
 	const isPanelOpen = selectedEmailId !== null || isComposing;
 
-	// Beside the 256px mailbox rail, list + reader only fit from lg (1024px). Narrower
-	// screens show either the list or the reader, which then offers a back arrow.
+	// Beside the mailbox and folder columns, list + reader only fit from the `split` breakpoint
+	// (1184px, app/index.css). Narrower screens show either one, and the reader offers a back arrow.
 	return (
 		<div role="group" className="flex h-full" aria-label={t("Mail list and reader", "邮件列表与阅读区")}>
 			<div
 				className={`flex flex-col min-w-0 shrink-0 ${
 					isPanelOpen
-						? "hidden lg:flex lg:w-[340px] lg:border-r lg:border-kumo-line xl:w-[360px]"
-						: "w-full lg:w-[340px] lg:border-r lg:border-kumo-line xl:w-[360px]"
+						? "hidden split:flex split:w-80 split:border-r split:border-kumo-line 2xl:w-[360px]"
+						: "w-full split:w-80 split:border-r split:border-kumo-line 2xl:w-[360px]"
 				}`}
 			>
 				{children}
 			</div>
 			{isPanelOpen && (
-				<div className="flex-1 flex flex-col min-w-0 overflow-hidden w-full lg:w-auto">
+				<div className="flex-1 flex flex-col min-w-0 overflow-hidden w-full split:w-auto">
 					{isComposing && !selectedEmailId ? (
 						<ComposePanel />
 					) : isComposing && selectedEmailId ? (
@@ -53,7 +53,7 @@ export default function MailboxSplitView({
 					) : null}
 				</div>
 			)}
-			{!isPanelOpen && <div className="hidden min-w-0 flex-1 items-center justify-center bg-kumo-base p-8 text-center text-sm text-kumo-subtle lg:flex">{t("Select an email to read it here.", "选择一封邮件，在这里查看正文。")}</div>}
+			{!isPanelOpen && <div className="hidden min-w-0 flex-1 items-center justify-center bg-kumo-base p-8 text-center text-sm text-kumo-subtle split:flex">{t("Select an email to read it here.", "选择一封邮件，在这里查看正文。")}</div>}
 		</div>
 	);
 }

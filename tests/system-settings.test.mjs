@@ -17,7 +17,7 @@ const mf = new Miniflare({
 });
 const origin = 'https://mail.example.test';
 const mailboxes = ['first@example.com', 'second@example.com'];
-const defaults = { autoDraftRepliesEnabled: false, agentSystemPrompt: '' };
+const defaults = { autoDraftRepliesEnabled: false, agentSystemPrompt: '', unreadBadgeStyle: 'count' };
 const endpoint = '/api/v1/settings';
 let count = 0;
 async function request(path, { method = 'GET', body, cookie } = {}) {
@@ -66,10 +66,10 @@ try {
 		assert.equal((await request('/api/v1/mailboxes', { method: 'POST', body: { email: 'invalid@example.com', name: 'Invalid', settings } })).status, 400);
 	}
 	assert.equal((await set({ autoDraftRepliesEnabled: true, agentSystemPrompt: '  Global prompt  ' })).status, 200);
-	assert.deepEqual(await get(), { autoDraftRepliesEnabled: true, agentSystemPrompt: 'Global prompt' });
+	assert.deepEqual(await get(), { autoDraftRepliesEnabled: true, agentSystemPrompt: 'Global prompt', unreadBadgeStyle: 'count' }, 'settings saved without a badge style read as counts');
 	assert.equal((await (await request('/__prompt')).json()).prompt, 'Global prompt');
 	const before = await (await bucket.get('settings/system.json')).text();
-	for (const invalid of [null, [], {}, { autoDraftRepliesEnabled: true }, { ...defaults, autoDraftRepliesEnabled: 'true' }, { ...defaults, agentSystemPrompt: null }, { ...defaults, agentSystemPrompt: 'x'.repeat(20_001) }, { ...defaults, other: true }]) {
+	for (const invalid of [null, [], {}, { autoDraftRepliesEnabled: true }, { ...defaults, autoDraftRepliesEnabled: 'true' }, { ...defaults, agentSystemPrompt: null }, { ...defaults, agentSystemPrompt: 'x'.repeat(20_001) }, { ...defaults, unreadBadgeStyle: 'big' }, { ...defaults, other: true }]) {
 		assert.equal((await set(invalid)).status, 400);
 		assert.equal(await (await bucket.get('settings/system.json')).text(), before);
 	}
@@ -77,7 +77,9 @@ try {
 		await receive(email);
 		assert.equal(await drafts(email), 1, 'global enable applies to both mailboxes');
 	}
-	assert.equal((await set({ ...defaults, agentSystemPrompt: 'Next prompt' })).status, 200);
+	assert.equal((await set({ ...defaults, agentSystemPrompt: 'Next prompt', unreadBadgeStyle: 'dot' })).status, 200);
+	assert.equal((await get()).unreadBadgeStyle, 'dot');
+	assert.equal((await (await request('/api/v1/config')).json()).unreadBadgeStyle, 'dot', 'every viewer reads the badge style from config');
 	assert.equal((await (await request('/__prompt')).json()).prompt, 'Next prompt', 'prompt reads are not cached');
 	for (const email of mailboxes) {
 		await receive(email);

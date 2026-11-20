@@ -7,6 +7,8 @@ import { systemSettingsSchema, type SystemSettings } from "../../shared/system-s
 import { useI18n } from "~/hooks/useI18n";
 import api from "~/services/api";
 import ReceptionSettings from "~/components/ReceptionSettings";
+import UnreadBadge from "~/components/UnreadBadge";
+import { queryKeys } from "~/queries/keys";
 
 export function meta() { return [{ title: "Agentic Inbox" }]; }
 
@@ -31,6 +33,8 @@ export default function SystemSettingsRoute() {
 		try {
 			const saved = await api.updateSystemSettings(parsed.data);
 			queryClient.setQueryData(["system-settings"], saved);
+			// Badges read the style from the shared config, so refresh it right away.
+			void queryClient.invalidateQueries({ queryKey: queryKeys.config });
 			setDraft(null);
 			toast.add({ title: t("Settings saved!", "设置已保存！") });
 		} catch (err) {
@@ -41,7 +45,7 @@ export default function SystemSettingsRoute() {
 	const loadError = session.error || settings.error;
 	return <main className="mx-auto w-full max-w-2xl px-4 py-8 md:px-6 md:py-12">
 		<h1 className="text-2xl font-semibold">{t("System settings", "系统设置")}</h1>
-		<p className="mt-2 text-sm text-kumo-subtle">{t("Configure receiving domains and the AI assistant for all mailboxes.", "管理收信域名、自动建箱及所有邮箱的 AI 助手。")}</p>
+		<p className="mt-2 text-sm text-kumo-subtle">{t("Configure receiving domains, the AI assistant and unread alerts for all mailboxes.", "管理收信域名、自动建箱、所有邮箱的 AI 助手及未读提示。")}</p>
 		{session.data?.role === "admin" && <ReceptionSettings />}
 		{loadError ? <div className="mt-6 space-y-3">
 			<p role="alert" className="text-sm text-kumo-error">{message(loadError.message)}</p>
@@ -61,6 +65,17 @@ export default function SystemSettingsRoute() {
 					<textarea id="system-agent-prompt" value={values.agentSystemPrompt} onChange={(event) => setDraft({ ...values, agentSystemPrompt: event.target.value })} maxLength={20000} rows={12} aria-describedby="system-agent-prompt-help" placeholder={t("Leave empty to use the built-in default prompt.", "留空使用内置默认提示词。")}
 						className="w-full resize-y rounded-lg border border-kumo-line bg-kumo-recessed px-3 py-2 text-sm text-kumo-default placeholder:text-kumo-subtle focus:outline-none focus:ring-1 focus:ring-kumo-ring disabled:opacity-50" />
 				</div>
+				<fieldset className="border-t border-kumo-line pt-5" aria-describedby="unread-badge-style-help">
+					<legend className="float-left w-full text-sm font-medium">{t("Unread alerts", "未读提示")}</legend>
+					<p id="unread-badge-style-help" className="clear-left pt-1 text-xs text-kumo-subtle">{t("How mailboxes with unread mail are marked in the mailbox list, for everyone who uses this inbox, including shared visitors.", "邮箱有未读邮件时，在邮箱列表中的提示样式。对所有使用者生效，包括分享访客。")}</p>
+					<div className="mt-3 flex flex-wrap gap-x-6 gap-y-2">
+						{(["count", "dot"] as const).map(option => <label key={option} className="flex cursor-pointer items-center gap-2 text-sm">
+							<input type="radio" name="unread-badge-style" value={option} checked={(values.unreadBadgeStyle ?? "count") === option} onChange={() => setDraft({ ...values, unreadBadgeStyle: option })} className="size-4 shrink-0 accent-kumo-accent" />
+							{option === "count" ? t("Red badge with count", "红点数字") : t("Red dot only", "仅红点")}
+							<span aria-hidden="true" className="inline-flex"><UnreadBadge count={3} label="" style={option} /></span>
+						</label>)}
+					</div>
+				</fieldset>
 			</fieldset>
 			{error && <p role="alert" className="text-sm text-kumo-error">{error} {t("Your changes have not been saved. Try again.", "您的更改尚未保存，请重试。")}</p>}
 			<div className="flex justify-end"><Button type="submit" variant="primary" loading={saving} disabled={saving}>{t("Save Changes", "保存更改")}</Button></div>

@@ -173,13 +173,15 @@ app.delete("/api/v1/shares/:id", async c => { await authStore(c.env).revokeShare
 // -- Config ---------------------------------------------------------
 
 app.get("/api/v1/config", async (c) => {
-	const reception = await getReception(c.env);
+	// Every viewer needs the administrator's badge style; the rest of the system settings stay admin-only.
+	// A damaged settings file must not break mailbox navigation, so it falls back to counts.
+	const [reception, unreadBadgeStyle] = await Promise.all([getReception(c.env), getSystemSettings(c.env).then(settings => settings.unreadBadgeStyle, () => "count" as const)]);
 	const identity = c.var.identity;
-	if (identity.role === "mailbox") return c.json({domains: [], emailAddresses: []});
+	if (identity.role === "mailbox") return c.json({domains: [], emailAddresses: [], unreadBadgeStyle});
 	const visible = (await listMailboxes(c.env.BUCKET)).filter(m => canAccessMailbox(identity, m.email));
 	const domains = [...new Set([...(identity.role === "admin" ? reception.domains : []), ...visible.map(m => m.email.split("@")[1]), ...(identity.role === "share" && identity.scope === "domain" ? [identity.target] : [])])].sort();
 	const emailAddresses = c.env.EMAIL_ADDRESSES ?? [];
-	return c.json({ domains, emailAddresses: identity.role === "admin" ? emailAddresses : [], acceptAll: identity.role === "admin" && reception.mode === "all" });
+	return c.json({ domains, emailAddresses: identity.role === "admin" ? emailAddresses : [], acceptAll: identity.role === "admin" && reception.mode === "all", unreadBadgeStyle });
 });
 
 // -- Mailboxes ------------------------------------------------------

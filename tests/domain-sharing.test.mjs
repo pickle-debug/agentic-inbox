@@ -90,6 +90,10 @@ try {
 	assert.equal(sharedSummary[0].unreadCount, 1);
 	assert.equal((await json('/api/v1/mailboxes?summary=true', readOpt))[0].unreadCount, 1, 'read-only polling must not mark mail read');
 	assert.deepEqual((await json('/api/v1/config', readOpt)).domains, ['zaku.net']);
+	assert.equal((await json('/api/v1/config', readOpt)).unreadBadgeStyle, 'count');
+	assert.equal((await request('/api/v1/settings', {method: 'PUT', body: {autoDraftRepliesEnabled: false, agentSystemPrompt: '', unreadBadgeStyle: 'dot'}})).status, 200);
+	assert.equal((await json('/api/v1/config', readOpt)).unreadBadgeStyle, 'dot', "shared visitors follow the administrator's unread alert style");
+	assert.equal((await request('/api/v1/settings', readOpt)).status, 403, 'the rest of the system settings stay administrator-only');
 	for (const target of ['dev@new.net', 'hr@fakezaku.net', 'hr@sub.zaku.net']) for (const suffix of ['', '/emails', '/folders', '/search?q=Hello', '/emails/nope', '/threads/nope', '/emails/nope/attachments/nope']) assert.equal((await request(mailbox(target) + suffix, readOpt)).status, 403, target + suffix);
 	const emails = await json(mailbox('hr@zaku.net') + '/emails?folder=inbox', readOpt);
 	const id = emails.emails[0].id;

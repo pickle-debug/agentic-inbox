@@ -2,9 +2,8 @@
 // Licensed under the Apache 2.0 license found in the LICENSE file or at:
 //     https://opensource.org/licenses/Apache-2.0
 
-import { useEffect, useRef, useState } from "react";
-import { Dialog } from "@cloudflare/kumo";
-import { Outlet, useLocation, useParams } from "react-router";
+import { useEffect, useRef } from "react";
+import { Outlet, useParams } from "react-router";
 import AgentSidebar from "~/components/AgentSidebar";
 import ComposeEmail from "~/components/ComposeEmail";
 import Header from "~/components/Header";
@@ -19,8 +18,6 @@ export default function MailboxRoute() {
 	const { t } = useI18n();
 	const {identity, shared, writable} = usePermissions();
 	const { mailboxId } = useParams<{ mailboxId: string }>();
-	const {pathname} = useLocation();
-	const [toolsOpen, setToolsOpen] = useState(false);
 	// Prefetch mailbox data for child components
 	useMailbox(mailboxId);
 	const prevMailboxIdRef = useRef<string | undefined>(undefined);
@@ -30,12 +27,10 @@ export default function MailboxRoute() {
 		isAgentPanelOpen,
 		closePanel,
 		closeComposeModal,
-		isComposing,
 		toggleAgentPanel,
 	} = useUIStore();
 
 	useEffect(() => () => closeSidebar(), [closeSidebar]);
-	useEffect(() => {setToolsOpen(false);}, [pathname, isComposing]);
 
 	useEffect(() => {
 		if (
@@ -65,18 +60,24 @@ export default function MailboxRoute() {
 				/>
 			)}
 
-			{/* Sidebar: hidden on mobile by default, shown as overlay when open */}
+			{/* Mailboxes of this domain, then the open mailbox's folders. Phones show both in one
+			    overlay from the menu button; wider screens keep them as fixed columns. */}
 			<div
-				className={`fixed bottom-0 top-14 left-0 z-40 w-64 transform transition-transform duration-200 ease-in-out md:relative md:top-auto md:bottom-auto md:translate-x-0 md:z-0 ${
+				className={`fixed bottom-0 top-14 left-0 z-40 flex w-[calc(100vw-3rem)] max-w-md transform transition-transform duration-200 ease-in-out md:relative md:top-auto md:bottom-auto md:z-0 md:w-auto md:max-w-none md:translate-x-0 ${
 					isSidebarOpen ? "translate-x-0" : "-translate-x-full"
 				}`}
 			>
-				<MailboxRail domain={mailboxId?.split("@")[1] || ""} onOpenTools={() => setToolsOpen(true)} />
+				<div className="min-w-0 flex-[1.2] border-r border-kumo-line md:w-60 md:flex-none">
+					<MailboxRail domain={mailboxId?.split("@")[1] || ""} />
+				</div>
+				<div className="min-w-0 flex-1 md:w-52 md:flex-none">
+					<Sidebar />
+				</div>
 			</div>
 
 			{/* Main content */}
 			<div className="flex-1 flex flex-col min-w-0 bg-kumo-base">
-				<Header onOpenTools={() => setToolsOpen(true)} />
+				<Header />
 				<main className="flex-1 overflow-hidden">
 					<Outlet />
 				</main>
@@ -91,7 +92,6 @@ export default function MailboxRoute() {
 			)}
 
 			{writable && <ComposeEmail />}
-			<Dialog.Root open={toolsOpen} onOpenChange={setToolsOpen}><Dialog size="sm" className="max-h-[85dvh] overflow-hidden p-0"><Dialog.Title className="sr-only">{t("Mailbox tools", "文件夹与邮箱操作")}</Dialog.Title><button type="button" onClick={() => setToolsOpen(false)} aria-label={t("Close mailbox tools", "关闭邮箱操作")} className="absolute right-2 top-2 z-10 rounded px-2 py-1 text-kumo-subtle hover:bg-kumo-tint">×</button><div className="h-[75dvh]" onClick={event => {if ((event.target as HTMLElement).closest("a")) setToolsOpen(false);}}><Sidebar /></div></Dialog></Dialog.Root>
 		</div>
 	);
 }

@@ -2,6 +2,12 @@
 @import "@cloudflare/kumo/styles/tailwind";
 @import "tailwindcss";
 
+/* Mailbox list (240px) + folders (208px) + messages (320px) + a readable message need ~1184px.
+   Narrower screens show the messages or the open message beside the two navigation columns. */
+@theme {
+  --breakpoint-split: 74rem;
+}
+
 body {
   margin: 0;
 }

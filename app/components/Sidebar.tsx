@@ -2,11 +2,10 @@
 // Licensed under the Apache 2.0 license found in the LICENSE file or at:
 //     https://opensource.org/licenses/Apache-2.0
 
-import { Button, Dialog, Input, Tooltip, useKumoToastManager } from "@cloudflare/kumo";
+import { Badge, Button, Dialog, Input, Tooltip, useKumoToastManager } from "@cloudflare/kumo";
 import {
 	AddressBookIcon,
 	ArchiveIcon,
-	CaretLeftIcon,
 	FileIcon,
 	FolderIcon,
 	GearSixIcon,
@@ -19,7 +18,7 @@ import {
 } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
-import { NavLink, useLocation, useNavigate, useParams } from "react-router";
+import { NavLink, useLocation, useParams } from "react-router";
 import { Folders, SYSTEM_FOLDER_IDS } from "shared/folders";
 import { useCreateFolder, useFolders } from "~/queries/folders";
 import { useMailbox } from "~/queries/mailboxes";
@@ -27,8 +26,6 @@ import { supportsInlineCompose, useUIStore } from "~/hooks/useUIStore";
 import api from "~/services/api";
 import { canWrite } from "../../shared/access";
 import { useI18n } from "~/hooks/useI18n";
-import { useUnreadBadgeStyle } from "~/hooks/useUnreadBadgeStyle";
-import UnreadBadge from "~/components/UnreadBadge";
 
 const FOLDER_ICONS: Record<string, React.ReactNode> = {
 	[Folders.INBOX]: <TrayIcon size={18} weight="regular" />,
@@ -61,7 +58,6 @@ function FolderLink({
 	unreadCount,
 	onClick,
 }: FolderLinkProps) {
-	const {style} = useUnreadBadgeStyle();
 	return (
 		<NavLink
 			to={to}
@@ -77,7 +73,7 @@ function FolderLink({
 			<span className="shrink-0">{icon}</span>
 			<span className="truncate flex-1">{label}</span>
 			{unreadCount != null && unreadCount > 0 && (
-				<UnreadBadge count={unreadCount} label={label} style={style}/>
+				<Badge variant="secondary">{unreadCount}</Badge>
 			)}
 		</NavLink>
 	);
@@ -86,7 +82,6 @@ function FolderLink({
 export default function Sidebar() {
 	const { t, message, folderName } = useI18n();
 	const { mailboxId } = useParams<{ mailboxId: string }>();
-	const navigate = useNavigate();
 	const { pathname } = useLocation();
 	const { data: folders = [] } = useFolders(mailboxId);
 	const createFolderMutation = useCreateFolder();
@@ -147,21 +142,9 @@ export default function Sidebar() {
 	};
 
 	return (
-		<aside className="h-full w-full bg-kumo-recessed flex flex-col shrink-0 border-r border-kumo-line">
-			{/* Back + identity */}
+		<aside aria-label={t("Mailbox folders", "邮箱文件夹")} className="h-full w-full bg-kumo-recessed flex flex-col shrink-0 border-r border-kumo-line">
+			{/* Identity. Mailboxes are switched in the rail beside this column; the top logo leads to domain management. */}
 			<div className="px-4 pt-4 pb-1">
-				{/* The mailbox rail already lists every shared mailbox; only administrators have a separate overview. */}
-				{session?.role === "admin" && <button
-					type="button"
-					onClick={() => {
-						navigate(`/?domain=${encodeURIComponent(mailboxId?.split("@")[1] || "")}&overview=1`);
-						closeSidebar();
-					}}
-					className="flex items-center gap-1.5 text-kumo-subtle text-sm hover:text-kumo-default transition-colors mb-2.5 cursor-pointer bg-transparent border-0 p-0"
-				>
-					<CaretLeftIcon size={14} />
-					<span>{t("Mailboxes", "邮箱")}</span>
-				</button>}
 				{/* Mailbox users skip the picker; keep logout reachable even when the session query fails. */}
 				{session?.role !== "admin" && <Button
 					variant="ghost"
