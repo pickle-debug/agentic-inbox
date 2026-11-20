@@ -9,6 +9,7 @@ import type { SQL } from "drizzle-orm";
 import * as schema from "../db/schema";
 import { Folders } from "../../shared/folders";
 import type { Env } from "../types";
+import type { InboxSummary } from "../../shared/mailbox-summary";
 import { applyMigrations, mailboxMigrations } from "./migrations";
 
 /**
@@ -571,6 +572,15 @@ export class MailboxDO extends DurableObject<Env> {
 	}
 
 	// ── Folders (Drizzle) ──────────────────────────────────────────
+
+	/** Pure read: badge polling must not mark messages read, including shared read-only sessions. */
+	getInboxSummary(): InboxSummary {
+		const row = this.ctx.storage.sql.exec<{unreadCount: number; latestDate: string | null}>(
+			"SELECT COALESCE(SUM(CASE WHEN read = 0 THEN 1 ELSE 0 END), 0) AS unreadCount, MAX(date) AS latestDate FROM emails WHERE folder_id = ?", Folders.INBOX,
+		).one();
+		const latest = this.ctx.storage.sql.exec<{subject: string}>("SELECT subject FROM emails WHERE folder_id = ? ORDER BY date DESC, id DESC LIMIT 1", Folders.INBOX).toArray()[0];
+		return {...row, latestSubject: latest?.subject ?? null};
+	}
 
 	async getFolders() {
 		const result = this.db

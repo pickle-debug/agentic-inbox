@@ -2,7 +2,7 @@
 // Licensed under the Apache 2.0 license found in the LICENSE file or at:
 //     https://opensource.org/licenses/Apache-2.0
 
-import { Badge, Button, Dialog, Input, Tooltip, useKumoToastManager } from "@cloudflare/kumo";
+import { Button, Dialog, Input, Tooltip, useKumoToastManager } from "@cloudflare/kumo";
 import {
 	AddressBookIcon,
 	ArchiveIcon,
@@ -23,10 +23,12 @@ import { NavLink, useLocation, useNavigate, useParams } from "react-router";
 import { Folders, SYSTEM_FOLDER_IDS } from "shared/folders";
 import { useCreateFolder, useFolders } from "~/queries/folders";
 import { useMailbox } from "~/queries/mailboxes";
-import { useUIStore } from "~/hooks/useUIStore";
+import { supportsInlineCompose, useUIStore } from "~/hooks/useUIStore";
 import api from "~/services/api";
 import { canWrite } from "../../shared/access";
 import { useI18n } from "~/hooks/useI18n";
+import { useUnreadBadgeStyle } from "~/hooks/useUnreadBadgeStyle";
+import UnreadBadge from "~/components/UnreadBadge";
 
 const FOLDER_ICONS: Record<string, React.ReactNode> = {
 	[Folders.INBOX]: <TrayIcon size={18} weight="regular" />,
@@ -59,6 +61,7 @@ function FolderLink({
 	unreadCount,
 	onClick,
 }: FolderLinkProps) {
+	const {style} = useUnreadBadgeStyle();
 	return (
 		<NavLink
 			to={to}
@@ -74,7 +77,7 @@ function FolderLink({
 			<span className="shrink-0">{icon}</span>
 			<span className="truncate flex-1">{label}</span>
 			{unreadCount != null && unreadCount > 0 && (
-				<Badge variant="secondary">{unreadCount}</Badge>
+				<UnreadBadge count={unreadCount} label={label} style={style}/>
 			)}
 		</NavLink>
 	);
@@ -144,13 +147,14 @@ export default function Sidebar() {
 	};
 
 	return (
-		<aside className="h-full w-64 bg-kumo-recessed flex flex-col shrink-0 border-r border-kumo-line">
+		<aside className="h-full w-full bg-kumo-recessed flex flex-col shrink-0 border-r border-kumo-line">
 			{/* Back + identity */}
 			<div className="px-4 pt-4 pb-1">
-				{(session?.role === "admin" || (session?.role === "share" && session.scope === "domain")) && <button
+				{/* The mailbox rail already lists every shared mailbox; only administrators have a separate overview. */}
+				{session?.role === "admin" && <button
 					type="button"
 					onClick={() => {
-						navigate(`/?domain=${encodeURIComponent(mailboxId?.split("@")[1] || "")}`);
+						navigate(`/?domain=${encodeURIComponent(mailboxId?.split("@")[1] || "")}&overview=1`);
 						closeSidebar();
 					}}
 					className="flex items-center gap-1.5 text-kumo-subtle text-sm hover:text-kumo-default transition-colors mb-2.5 cursor-pointer bg-transparent border-0 p-0"
@@ -184,7 +188,7 @@ export default function Sidebar() {
 					variant="primary"
 					icon={<PencilSimpleIcon size={16} />}
 					onClick={() => {
-						if (pathname.includes("/emails/") || pathname.replace(/\/+$/, "").endsWith("/search")) startCompose();
+						if (supportsInlineCompose(pathname)) startCompose();
 						else openComposeModal();
 						closeSidebar();
 					}}

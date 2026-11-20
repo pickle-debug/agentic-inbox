@@ -27,6 +27,7 @@ import { forwardingSettingsSchema } from "../shared/forwarding";
 import { autoReplySettingsSchema } from "../shared/automatic-replies";
 import { emailPrivacySettingsSchema } from "../shared/email-privacy";
 import { canAccessMailbox, shareInputSchema, mailboxAddressSchema } from "../shared/access";
+import type { InboxSummary } from "../shared/mailbox-summary";
 import { acceptsDomain, receptionSchema } from "../shared/reception";
 import { defaultMailboxSettings, getReception, RECEPTION_KEY } from "./lib/reception";
 import { processAutomaticReplies } from "./lib/automatic-replies";
@@ -185,7 +186,30 @@ app.get("/api/v1/config", async (c) => {
 
 app.get("/api/v1/mailboxes", async (c) => {
 	const allMailboxes = await listMailboxes(c.env.BUCKET);
-	return c.json(allMailboxes.filter(m => canAccessMailbox(c.var.identity, m.id)).map((m) => ({ ...m, name: m.id })));
+	const visible = allMailboxes.filter(m => canAccessMailbox(c.var.identity, m.id)).map((m) => ({...m, name: m.id}));
+	if (c.req.query("summary") !== "true") return c.json(visible);
+	// 先按授权范围过滤，不能为域名/邮箱分享读取其他邮箱的未读数或邮件摘要。
+	// Each poll costs one Durable Object call per visible mailbox, in bounded batches; the client
+	// slows its polling as the mailbox count grows. Use an aggregate index if counts grow large.
+	const inboxSummary = async (id: string): Promise<InboxSummary> => {
+		try {
+			return await c.env.MAILBOX.get(c.env.MAILBOX.idFromName(id)).getInboxSummary();
+		} catch (err) {
+			// One unavailable mailbox must not blank the whole list; its badge recovers on the next poll.
+			console.error("Inbox summary failed", id, err);
+			return {unreadCount: 0, latestDate: null, latestSubject: null};
+		}
+	};
+	const summaries: (typeof visible[number] & InboxSummary)[] = [];
+	for (let i = 0; i < visible.length; i += 10) {
+		summaries.push(...await Promise.all(visible.slice(i, i + 10).map(async mailbox => {
+			const [summary, object] = await Promise.all([inboxSummary(mailbox.id), c.env.BUCKET.get(`mailboxes/${mailbox.id}.json`).catch(() => null)]);
+			let name = mailbox.name;
+			try {const settings = object ? await object.json<{fromName?: unknown}>() : null; if (typeof settings?.fromName === "string" && settings.fromName.trim()) name = settings.fromName;} catch { /* Bad display metadata must not hide otherwise readable mail. */ }
+			return {...mailbox, name, unreadCount: summary.unreadCount, latestDate: summary.latestDate, latestSubject: summary.latestSubject};
+		})));
+	}
+	return c.json(summaries);
 });
 
 app.post("/api/v1/mailboxes", async (c) => {

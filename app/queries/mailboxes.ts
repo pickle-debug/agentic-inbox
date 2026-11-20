@@ -4,7 +4,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import api from "~/services/api";
-import type { Mailbox } from "~/types";
+import type { Mailbox, MailboxSummary } from "~/types";
 import { queryKeys } from "./keys";
 
 export function useMailboxes(options?: {refetchInterval?: number}) {
@@ -12,6 +12,16 @@ export function useMailboxes(options?: {refetchInterval?: number}) {
 		queryKey: queryKeys.mailboxes.all,
 		queryFn: () => api.listMailboxes() as Promise<Mailbox[]>,
 		refetchInterval: options?.refetchInterval,
+	});
+}
+
+export function useMailboxSummaries() {
+	return useQuery<MailboxSummary[]>({
+		queryKey: ["mailbox-summaries"],
+		queryFn: api.listMailboxSummaries,
+		// Every poll asks each visible mailbox for its Inbox count. Up to 30 mailboxes refresh every
+		// 15s; larger lists back off to at most 60s. Hidden tabs pause polling (TanStack default).
+		refetchInterval: query => Math.min(60_000, Math.max(15_000, (query.state.data?.length ?? 0) * 500)),
 	});
 }
 
@@ -32,6 +42,7 @@ export function useCreateMailbox() {
 			api.createMailbox(email, name),
 		onSuccess: () => {
 			qc.invalidateQueries({ queryKey: queryKeys.mailboxes.all });
+			qc.invalidateQueries({queryKey: ["mailbox-summaries"]});
 		},
 	});
 }
@@ -47,6 +58,7 @@ export function useUpdateMailbox() {
 		onSuccess: (_data, { mailboxId }) => {
 			qc.invalidateQueries({ queryKey: queryKeys.mailboxes.detail(mailboxId) });
 			qc.invalidateQueries({ queryKey: queryKeys.mailboxes.all });
+			qc.invalidateQueries({queryKey: ["mailbox-summaries"]});
 		},
 	});
 }
@@ -57,6 +69,7 @@ export function useDeleteMailbox() {
 		mutationFn: (mailboxId: string) => api.deleteMailbox(mailboxId),
 		onSuccess: () => {
 			qc.invalidateQueries({ queryKey: queryKeys.mailboxes.all });
+			qc.invalidateQueries({queryKey: ["mailbox-summaries"]});
 		},
 	});
 }

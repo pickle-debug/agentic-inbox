@@ -2,7 +2,7 @@
 // Licensed under the Apache 2.0 license found in the LICENSE file or at:
 //     https://opensource.org/licenses/Apache-2.0
 
-import type { Email, Folder, Mailbox } from "~/types";
+import type { Email, Folder, Mailbox, MailboxSummary } from "~/types";
 import type { Contact, ContactInput, ContactList } from "../../shared/contacts";
 import type { SystemSettings } from "../../shared/system-settings";
 import type { Identity, ShareInfo, ShareInput } from "../../shared/access";
@@ -131,6 +131,7 @@ const api = {
 
 	// Mailboxes
 	listMailboxes: () => get<Mailbox[]>("/api/v1/mailboxes"),
+	listMailboxSummaries: () => get<MailboxSummary[]>("/api/v1/mailboxes?summary=true"),
 	createMailbox: (email: string, name: string, settings?: unknown) =>
 		post<Mailbox>("/api/v1/mailboxes", { email, name, settings }),
 	getMailbox: (mailboxId: string) =>

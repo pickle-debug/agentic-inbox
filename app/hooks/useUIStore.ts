@@ -43,6 +43,12 @@ interface UIState {
 	closeComposeModal: () => void;
 }
 
+/** Only list and search routes render MailboxSplitView, which hosts the inline composer. */
+export function supportsInlineCompose(pathname: string) {
+	const path = pathname.replace(/\/+$/, "");
+	return path.includes("/emails/") || path.endsWith("/search");
+}
+
 export const useUIStore = create<UIState>((set, get) => ({
 	selectedEmailId: null,
 	isComposing: false,
@@ -50,7 +56,7 @@ export const useUIStore = create<UIState>((set, get) => ({
 	composeOptions: { mode: "new", originalEmail: null },
 	isComposeModalOpen: false,
 	isSidebarOpen: false,
-	isAgentPanelOpen: true,
+	isAgentPanelOpen: false,
 
 	selectEmail: (id) => set({ selectedEmailId: id, isComposing: false }),
 

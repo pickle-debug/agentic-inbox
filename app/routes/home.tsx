@@ -11,7 +11,9 @@ import { useState } from "react";
 import { Navigate, Link, useSearchParams } from "react-router";
 import { MailboxPasswordDialog } from "~/components/MailboxPasswordDialog";
 import ShareDialog from "~/components/ShareDialog";
-import { useMailboxes, useCreateMailbox, useDeleteMailbox } from "~/queries/mailboxes";
+import { useMailboxSummaries, useCreateMailbox, useDeleteMailbox } from "~/queries/mailboxes";
+import UnreadBadge, { UnreadBadgePreference } from "~/components/UnreadBadge";
+import { useUnreadBadgeStyle } from "~/hooks/useUnreadBadgeStyle";
 import { useI18n } from "~/hooks/useI18n";
 import api from "~/services/api";
 
@@ -22,7 +24,8 @@ export function meta() {
 export default function HomeRoute() {
 	const { t, message } = useI18n();
 	const session = useQuery({ queryKey: ["session"], queryFn: api.getSession });
-	const boxes = useMailboxes({ refetchInterval: 15000 });
+	const boxes = useMailboxSummaries();
+	const {style} = useUnreadBadgeStyle();
 	const config = useQuery({ queryKey: ["config"], queryFn: api.getConfig, refetchInterval: 15000 });
 	const create = useCreateMailbox();
 	const remove = useDeleteMailbox();
@@ -52,6 +55,8 @@ export default function HomeRoute() {
 		.sort((a, b) => a.email.localeCompare(b.email));
 	if (identity?.role === "mailbox" || (identity?.role === "share" && identity.scope === "mailbox"))
 		return <Navigate to={`/mailbox/${encodeURIComponent(identity.email)}/emails/inbox`} replace />;
+	if (identity?.role === "share" && identity.scope === "domain") return <Navigate to={`/domain/${encodeURIComponent(identity.target)}`} replace/>;
+	if (identity?.role === "admin" && requested && params.get("overview") !== "1") return <Navigate to={`/domain/${encodeURIComponent(requested)}`} replace/>;
 	const loadError = session.error || config.error || boxes.error;
 	if (loadError)
 		return (
@@ -87,7 +92,8 @@ export default function HomeRoute() {
 							: ""}
 					</p>
 				</div>
-				<div className="flex gap-2">
+				<div className="flex flex-wrap items-center gap-2">
+					<UnreadBadgePreference/>
 					{admin && (
 						<Button
 							size="sm"
@@ -139,15 +145,13 @@ export default function HomeRoute() {
 								aria-current={selected === domain ? "true" : undefined}
 								className={`flex shrink-0 items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm ${selected === domain ? "bg-kumo-base font-semibold text-kumo-default shadow-sm" : "text-kumo-subtle hover:bg-kumo-tint"}`}
 								onClick={() => {
-									setParams({ domain });
+									setParams(params.get("overview") === "1" ? {domain, overview: "1"} : {domain});
 									setSearch("");
 								}}
 							>
 								<GlobeIcon size={16} />
 								<span className="min-w-0 flex-1 truncate">{domain}</span>
-								<span className="text-xs text-kumo-subtle">
-									{boxes.data.filter((box) => box.email.split("@")[1] === domain).length}
-								</span>
+								<UnreadBadge count={boxes.data.filter(box => box.email.split("@")[1] === domain).reduce((total,box) => total + box.unreadCount, 0)} label={domain} style={style}/>
 							</button>
 						))}
 					</div>
@@ -169,6 +173,7 @@ export default function HomeRoute() {
 							</p>
 						</div>
 						<div className="flex gap-2">
+							{selected && <Link to={`/domain/${encodeURIComponent(selected)}`} className="inline-flex items-center rounded-md px-2 text-sm text-kumo-default hover:bg-kumo-tint">{t("Open inbox", "进入阅读区")}</Link>}
 							{admin && selected && (
 								<Button
 									size="sm"
@@ -219,6 +224,9 @@ export default function HomeRoute() {
 										<span className="block truncate text-xs text-kumo-subtle">{account.email}</span>
 									</span>
 								</Link>
+								{admin && (
+									<UnreadBadge count={account.unreadCount} label={account.email} style={style}/>
+								)}
 								{admin && (
 									<div className="flex items-center gap-1">
 										<Button

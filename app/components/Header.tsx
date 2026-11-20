@@ -3,14 +3,14 @@
 //     https://opensource.org/licenses/Apache-2.0
 
 import { Button, Input, Tooltip } from "@cloudflare/kumo";
-import { ListIcon, MagnifyingGlassIcon, RobotIcon, XIcon } from "@phosphor-icons/react";
+import { FolderIcon, ListIcon, MagnifyingGlassIcon, RobotIcon, XIcon } from "@phosphor-icons/react";
 import { type KeyboardEvent, useEffect, useState } from "react";
 import { useLocation, useNavigate, useParams, useSearchParams } from "react-router";
 import { useUIStore } from "~/hooks/useUIStore";
 import { usePermissions } from "~/hooks/usePermissions";
 import { useI18n } from "~/hooks/useI18n";
 
-export default function Header() {
+export default function Header({onOpenTools}: {onOpenTools?: () => void}) {
 	const { t } = useI18n();
 	const {identity, shared} = usePermissions();
 	const [searchQuery, setSearchQuery] = useState("");
@@ -62,6 +62,7 @@ export default function Header() {
 
 	return (
 		<header className="flex items-center gap-2 px-3 py-2.5 bg-kumo-base border-b border-kumo-line sticky top-0 z-10 md:px-5 md:gap-4">
+			{onOpenTools && <Button variant="ghost" shape="square" size="sm" icon={<FolderIcon size={18}/>} onClick={onOpenTools} aria-label={t("Mailbox tools", "文件夹与邮箱操作")}/>}
 			{/* Hamburger menu - mobile only */}
 			{mailboxId && <Button
 				variant="ghost"

@@ -18,7 +18,7 @@ import {
 } from "@phosphor-icons/react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useParams } from "react-router";
+import { useNavigate, useParams } from "react-router";
 import { Folders } from "shared/folders";
 import { formatListDate } from "shared/dates";
 import MailboxSplitView from "~/components/MailboxSplitView";
@@ -34,6 +34,7 @@ import { queryKeys } from "~/queries/keys";
 import { useUIStore } from "~/hooks/useUIStore";
 import type { Email } from "~/types";
 import { usePermissions } from "~/hooks/usePermissions";
+import { useUnreadBadgeStyle } from "~/hooks/useUnreadBadgeStyle";
 import { useI18n } from "~/hooks/useI18n";
 
 const PAGE_SIZE = 25;
@@ -148,6 +149,8 @@ function FolderEmptyState({
 export default function EmailListRoute() {
 	const { t, dateLocale, folderName: localizeFolderName } = useI18n();
 	const {writable, deletable} = usePermissions();
+	const navigate = useNavigate();
+	const {style: badgeStyle} = useUnreadBadgeStyle();
 	const { mailboxId, folder } = useParams<{
 		mailboxId: string;
 		folder: string;
@@ -182,7 +185,7 @@ export default function EmailListRoute() {
 		isFetching: isRefreshing,
 		isError,
 		refetch,
-	} = useEmails(mailboxId, params, { refetchInterval: 30_000 });
+	} = useEmails(mailboxId, params, { refetchInterval: 15_000 });
 
 	const emails = emailData?.emails ?? [];
 	const totalCount = emailData?.totalCount ?? 0;
@@ -286,9 +289,10 @@ export default function EmailListRoute() {
 		>
 				{/* Folder header */}
 				<div className="flex items-center justify-between px-4 py-3.5 border-b border-kumo-line shrink-0 md:px-5">
-					<h1 className="text-lg font-semibold text-kumo-default">
+					<h1 className="sr-only">
 						{folderName}
 					</h1>
+					<select aria-label={t("Mail folder", "邮件文件夹")} value={folder || Folders.INBOX} onChange={event => navigate(`/mailbox/${encodeURIComponent(mailboxId!)}/emails/${encodeURIComponent(event.target.value)}`)} className="min-w-0 max-w-[55%] rounded-md border-0 bg-kumo-base py-1 pr-2 text-sm font-semibold text-kumo-default">{folders.map(item => <option key={item.id} value={item.id}>{localizeFolderName(item.id, item.name)}{item.unreadCount > 0 ? badgeStyle === "count" ? ` (${item.unreadCount})` : " •" : ""}</option>)}</select>
 					<div className="flex items-center gap-1">
 						{totalCount > 0 && (
 							<span className="text-sm text-kumo-subtle mr-2 hidden sm:inline">
@@ -345,7 +349,7 @@ export default function EmailListRoute() {
 											}
 										}}
 										className={`group flex items-center gap-3 w-full text-left cursor-pointer transition-colors border-b border-kumo-line px-4 py-2.5 md:px-6 md:py-3 ${
-											isPanelOpen ? "md:px-4 md:py-2.5" : ""
+											isPanelOpen ? "lg:px-4 lg:py-2.5" : ""
 										} ${isSelected ? "bg-kumo-tint" : "hover:bg-kumo-tint"}`}
 									>
 										{/* Unread dot */}

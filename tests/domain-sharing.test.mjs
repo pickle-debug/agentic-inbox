@@ -29,6 +29,10 @@ try {
 	assert.deepEqual((await json('/api/v1/mailboxes')).map(m => m.email), ['hr@zaku.net']);
 	assert.equal((await json(mailbox('hr@zaku.net') + '/emails?folder=inbox')).totalCount, 1);
 	assert.deepEqual((await json(mailbox('hr@zaku.net'))).settings.autoReply, {enabled: false, subject: '', message: ''});
+	const initialSummary = (await json('/api/v1/mailboxes?summary=true'))[0];
+	assert.equal(initialSummary.unreadCount, 1);
+	assert.equal(initialSummary.latestSubject, 'Fixture');
+	assert.equal(initialSummary.name, 'hr');
 	await receive('x@fakezaku.net'); await receive('x@sub.zaku.net');
 	assert.equal((await json('/api/v1/mailboxes')).length, 1, 'reception is exact-domain, not loose suffix or subdomain matching');
 	assert.equal((await setReception({mode: 'all', domains: ['empty.net'], autoCreate: true})).status, 200);
@@ -57,6 +61,10 @@ try {
 	assert.equal(digests[0].token_hash, createHash('sha256').update(read.token).digest('hex'));
 	const readOpt = {key: read.token};
 	assert.deepEqual((await json('/api/v1/mailboxes', readOpt)).map(m => m.email), ['hr@zaku.net']);
+	const sharedSummary = await json('/api/v1/mailboxes?summary=true', readOpt);
+	assert.deepEqual(sharedSummary.map(m => m.email), ['hr@zaku.net'], 'summary counts and previews must obey the same sharing scope');
+	assert.equal(sharedSummary[0].unreadCount, 1);
+	assert.equal((await json('/api/v1/mailboxes?summary=true', readOpt))[0].unreadCount, 1, 'read-only polling must not mark mail read');
 	assert.deepEqual((await json('/api/v1/config', readOpt)).domains, ['zaku.net']);
 	for (const target of ['dev@new.net', 'hr@fakezaku.net', 'hr@sub.zaku.net']) for (const suffix of ['', '/emails', '/folders', '/search?q=Hello', '/emails/nope', '/threads/nope', '/emails/nope/attachments/nope']) assert.equal((await request(mailbox(target) + suffix, readOpt)).status, 403, target + suffix);
 	const emails = await json(mailbox('hr@zaku.net') + '/emails?folder=inbox', readOpt);
@@ -80,6 +88,7 @@ try {
 	assert.equal((await json('/api/v1/mailboxes', {cookie})).length, 2, 'domain link includes future mailboxes');
 	const single = await share('mailbox', 'hr@zaku.net', 'read');
 	assert.deepEqual((await json('/api/v1/mailboxes', {key: single.token})).map(m => m.email), ['hr@zaku.net']);
+	assert.deepEqual((await json('/api/v1/mailboxes?summary=true', {key: single.token})).map(m => m.email), ['hr@zaku.net'], 'mailbox shares cannot read sibling notification metadata');
 	assert.equal((await request(mailbox('jobs@zaku.net'), {key: single.token})).status, 403);
 	const singleLink = await request(`/?mailbox=hr%40zaku.net&token=${single.token}`);
 	assert.equal(singleLink.status, 303); assert.equal(singleLink.headers.get('location'), '/mailbox/hr%40zaku.net/emails/inbox');
@@ -99,6 +108,7 @@ try {
 	assert.equal((await json('/__sent')).length, 1, 'only authorized sends reach the stub email binding');
 	assert.equal((await mf.dispatchFetch(origin + mailbox('hr@zaku.net') + '/drafts', {method: 'POST', headers: {'Content-Type': 'application/json', Authorization: `Bearer ${write.token}`}, body: JSON.stringify({body: 'Non-browser API draft'})})).status, 201);
 	assert.equal((await request(mailbox('hr@zaku.net') + '/emails/' + id, {...writeOpt, method: 'PUT', body: {read: true}})).status, 200);
+	assert.equal((await json('/api/v1/mailboxes?summary=true', writeOpt)).find(m => m.email === 'hr@zaku.net').unreadCount, 0, 'drafts and sent mail must not inflate inbox badges');
 	assert.equal((await request(mailbox('hr@zaku.net') + '/emails/' + id, {...writeOpt, method: 'DELETE'})).status, 403);
 	assert.equal((await request(mailbox('hr@zaku.net') + '/emails/' + id + '/move', {...writeOpt, method: 'POST', body: {folderId: 'trash'}})).status, 403);
 	assert.equal((await request(mailbox('hr@zaku.net') + '/drafts', {...writeOpt, method: 'POST', body: {body: 'Cannot replace received email', draft_id: id}})).status, 403);

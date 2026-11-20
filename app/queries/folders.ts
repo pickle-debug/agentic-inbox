@@ -13,6 +13,7 @@ export function useFolders(mailboxId: string | undefined) {
 			? queryKeys.folders.list(mailboxId)
 			: ["folders", "_disabled"],
 		queryFn: () => api.listFolders(mailboxId!) as Promise<Folder[]>,
+		refetchInterval: 15_000,
 		enabled: !!mailboxId,
 	});
 }

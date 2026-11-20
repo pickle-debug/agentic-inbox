@@ -2,12 +2,14 @@
 // Licensed under the Apache 2.0 license found in the LICENSE file or at:
 //     https://opensource.org/licenses/Apache-2.0
 
-import { useEffect, useRef } from "react";
-import { Outlet, useParams } from "react-router";
+import { useEffect, useRef, useState } from "react";
+import { Dialog } from "@cloudflare/kumo";
+import { Outlet, useLocation, useParams } from "react-router";
 import AgentSidebar from "~/components/AgentSidebar";
 import ComposeEmail from "~/components/ComposeEmail";
 import Header from "~/components/Header";
 import Sidebar from "~/components/Sidebar";
+import MailboxRail from "~/components/MailboxRail";
 import { useMailbox } from "~/queries/mailboxes";
 import { useUIStore } from "~/hooks/useUIStore";
 import { usePermissions } from "~/hooks/usePermissions";
@@ -17,6 +19,8 @@ export default function MailboxRoute() {
 	const { t } = useI18n();
 	const {identity, shared, writable} = usePermissions();
 	const { mailboxId } = useParams<{ mailboxId: string }>();
+	const {pathname} = useLocation();
+	const [toolsOpen, setToolsOpen] = useState(false);
 	// Prefetch mailbox data for child components
 	useMailbox(mailboxId);
 	const prevMailboxIdRef = useRef<string | undefined>(undefined);
@@ -26,9 +30,12 @@ export default function MailboxRoute() {
 		isAgentPanelOpen,
 		closePanel,
 		closeComposeModal,
+		isComposing,
+		toggleAgentPanel,
 	} = useUIStore();
 
 	useEffect(() => () => closeSidebar(), [closeSidebar]);
+	useEffect(() => {setToolsOpen(false);}, [pathname, isComposing]);
 
 	useEffect(() => {
 		if (
@@ -45,7 +52,7 @@ export default function MailboxRoute() {
 	}, [mailboxId, closeComposeModal, closePanel, closeSidebar]);
 
 	return (
-		<div className="flex h-[calc(100dvh-3.5rem)] overflow-hidden">
+		<div className="relative flex h-[calc(100dvh-3.5rem)] overflow-hidden">
 			{/* Mobile sidebar overlay backdrop */}
 			{isSidebarOpen && (
 				<div
@@ -64,12 +71,12 @@ export default function MailboxRoute() {
 					isSidebarOpen ? "translate-x-0" : "-translate-x-full"
 				}`}
 			>
-				<Sidebar />
+				<MailboxRail domain={mailboxId?.split("@")[1] || ""} onOpenTools={() => setToolsOpen(true)} />
 			</div>
 
 			{/* Main content */}
 			<div className="flex-1 flex flex-col min-w-0 bg-kumo-base">
-				<Header />
+				<Header onOpenTools={() => setToolsOpen(true)} />
 				<main className="flex-1 overflow-hidden">
 					<Outlet />
 				</main>
@@ -77,12 +84,14 @@ export default function MailboxRoute() {
 
 			{/* Agent + MCP sidebar -- togglable on desktop */}
 			{isAgentPanelOpen && identity && !shared && (
-				<div className="hidden lg:flex w-[380px] shrink-0 border-l border-kumo-line flex-col bg-kumo-base overflow-hidden">
+				<div className="absolute inset-y-0 right-0 z-30 hidden w-[380px] max-w-full flex-col overflow-hidden border-l border-kumo-line bg-kumo-base shadow-xl lg:flex">
+					<button type="button" className="absolute right-2 top-2 z-10 rounded px-2 py-1 text-kumo-subtle hover:bg-kumo-tint" onClick={toggleAgentPanel} aria-label={t("Close agent panel", "关闭助手面板")}>×</button>
 					<AgentSidebar />
 				</div>
 			)}
 
 			{writable && <ComposeEmail />}
+			<Dialog.Root open={toolsOpen} onOpenChange={setToolsOpen}><Dialog size="sm" className="max-h-[85dvh] overflow-hidden p-0"><Dialog.Title className="sr-only">{t("Mailbox tools", "文件夹与邮箱操作")}</Dialog.Title><button type="button" onClick={() => setToolsOpen(false)} aria-label={t("Close mailbox tools", "关闭邮箱操作")} className="absolute right-2 top-2 z-10 rounded px-2 py-1 text-kumo-subtle hover:bg-kumo-tint">×</button><div className="h-[75dvh]" onClick={event => {if ((event.target as HTMLElement).closest("a")) setToolsOpen(false);}}><Sidebar /></div></Dialog></Dialog.Root>
 		</div>
 	);
 }

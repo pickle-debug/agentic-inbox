@@ -6,6 +6,7 @@ import { usePermissions } from "~/hooks/usePermissions";
 import type { ReactNode } from "react";
 import ComposePanel from "~/components/ComposePanel";
 import EmailPanel from "~/components/EmailPanel";
+import { useI18n } from "~/hooks/useI18n";
 
 interface MailboxSplitViewProps {
 	selectedEmailId: string | null;
@@ -19,22 +20,25 @@ export default function MailboxSplitView({
 	children,
 }: MailboxSplitViewProps) {
 	const {writable} = usePermissions();
+	const {t} = useI18n();
 	isComposing = isComposing && writable;
 	const isPanelOpen = selectedEmailId !== null || isComposing;
 
+	// Beside the 256px mailbox rail, list + reader only fit from lg (1024px). Narrower
+	// screens show either the list or the reader, which then offers a back arrow.
 	return (
-		<div className="flex h-full">
+		<div role="group" className="flex h-full" aria-label={t("Mail list and reader", "邮件列表与阅读区")}>
 			<div
 				className={`flex flex-col min-w-0 shrink-0 ${
 					isPanelOpen
-						? "hidden md:flex md:w-[380px] md:border-r md:border-kumo-line"
-						: "w-full"
+						? "hidden lg:flex lg:w-[340px] lg:border-r lg:border-kumo-line xl:w-[360px]"
+						: "w-full lg:w-[340px] lg:border-r lg:border-kumo-line xl:w-[360px]"
 				}`}
 			>
 				{children}
 			</div>
 			{isPanelOpen && (
-				<div className="flex-1 flex flex-col min-w-0 overflow-hidden w-full md:w-auto">
+				<div className="flex-1 flex flex-col min-w-0 overflow-hidden w-full lg:w-auto">
 					{isComposing && !selectedEmailId ? (
 						<ComposePanel />
 					) : isComposing && selectedEmailId ? (
@@ -49,6 +53,7 @@ export default function MailboxSplitView({
 					) : null}
 				</div>
 			)}
+			{!isPanelOpen && <div className="hidden min-w-0 flex-1 items-center justify-center bg-kumo-base p-8 text-center text-sm text-kumo-subtle lg:flex">{t("Select an email to read it here.", "选择一封邮件，在这里查看正文。")}</div>}
 		</div>
 	);
 }

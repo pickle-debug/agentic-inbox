@@ -4,6 +4,9 @@
 
 import type { AutoReplySettings } from "../../shared/automatic-replies";
 import type { EmailPrivacySettings } from "../../shared/email-privacy";
+import type { InboxSummary } from "../../shared/mailbox-summary";
+
+export type MailboxSummary = Mailbox & InboxSummary;
 
 export interface SignatureSettings {
 	enabled: boolean;

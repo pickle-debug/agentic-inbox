@@ -12,6 +12,7 @@ export default [
 	route("login", "routes/login.tsx"),
 	route("contacts", "routes/contacts-index.tsx"),
 	route("settings", "routes/system-settings.tsx"),
+	route("domain/:domain", "routes/domain.tsx"),
 	index("routes/home.tsx"),
 	route("mailbox/:mailboxId", "routes/mailbox.tsx", [
 		index("routes/mailbox-index.tsx"),
