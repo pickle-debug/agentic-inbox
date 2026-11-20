@@ -25,6 +25,7 @@ import { bodyLimit } from "hono/body-limit";
 import { Folders } from "../shared/folders";
 import { forwardingSettingsSchema } from "../shared/forwarding";
 import { autoReplySettingsSchema } from "../shared/automatic-replies";
+import { emailPrivacySettingsSchema } from "../shared/email-privacy";
 import { processAutomaticReplies } from "./lib/automatic-replies";
 import type { EmailFull } from "./lib/schemas";
 import type { Env } from "./types";
@@ -42,6 +43,7 @@ const CreateMailboxBody = z.object({
 
 function mailboxSettingsSchema(mailboxId: string) {
 	return z.object({
+		privacy: emailPrivacySettingsSchema.optional(),
 		forwarding: forwardingSettingsSchema(mailboxId).optional(),
 		autoReply: autoReplySettingsSchema.optional(),
 	}).passthrough().superRefine((settings, ctx) => {
@@ -165,7 +167,7 @@ app.post("/api/v1/mailboxes", async (c) => {
 	}
 	const key = `mailboxes/${email}.json`;
 	if (await c.env.BUCKET.head(key)) return c.json({ error: "Mailbox already exists" }, 409);
-	const defaultSettings = { fromName: name, forwarding: { enabled: false, email: "" }, signature: { enabled: false, text: "" }, autoReply: { enabled: false, subject: "", message: "" } };
+	const defaultSettings = { fromName: name, privacy: { enabled: false, domains: [] }, forwarding: { enabled: false, email: "" }, signature: { enabled: false, text: "" }, autoReply: { enabled: false, subject: "", message: "" } };
 	const finalSettings = { ...defaultSettings, ...parsedSettings.data };
 	await c.env.BUCKET.put(key, JSON.stringify(finalSettings));
 	const stub = c.env.MAILBOX.get(c.env.MAILBOX.idFromName(email));

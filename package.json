@@ -27,6 +27,7 @@
 		"test:auth": "node tests/auth.test.mjs",
 		"test:system-settings": "node tests/system-settings.test.mjs && node tests/settings-ui.test.mjs",
 		"test:i18n": "node tests/i18n.test.mjs",
+		"test:privacy": "node tests/email-privacy-settings.test.mjs && node tests/email-privacy.test.mjs",
 		"test:forwarding": "node tests/forwarding.test.mjs",
 		"test:automatic-replies": "node tests/automatic-replies.test.mjs",
 		"test:contacts": "node tests/contacts.test.mjs && node tests/contact-recipients.test.mjs"
@@ -100,6 +101,7 @@
 		"@types/node": "^20.19.37",
 		"@types/react": "^19.1.2",
 		"@types/react-dom": "^19.1.2",
+		"playwright": "^1.64.0",
 		"tailwindcss": "^4.1.4",
 		"typescript": "^5.8.3",
 		"vite": "^6.3.3",

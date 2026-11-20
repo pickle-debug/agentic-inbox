@@ -37,6 +37,7 @@ https://github.com/cloudflare/agentic-inbox/issues/4#issuecomment-4269118513
 
 ## Features
 
+- **Configurable private email reader** — Enable per mailbox for specified sender domains to extract text and HTTP(S) links without rendering the email or loading its images. Other senders retain normal HTML reading.
 - **Full email client** — Send and receive emails via Cloudflare Email Routing with a rich text composer, reply/forward threading, folder organization, search, and attachments
 - **Per-mailbox isolation** — Each mailbox runs in its own Durable Object with SQLite storage and R2 for attachments
 - **Built-in AI agent** — Side panel with 9 email tools for reading, searching, drafting, and sending
@@ -48,6 +49,16 @@ https://github.com/cloudflare/agentic-inbox/issues/4#issuecomment-4269118513
 ### Interface language
 
 Choose **简体中文** or **English** using the language selector at the top right. Changes apply immediately and are remembered in this browser for one year. The first visit follows the browser's preferred supported language, falling back to English. Dates and interface messages follow the selected language; email content, contact details, and custom folder names stay unchanged. No mailbox settings are changed. Run `npm run test:i18n` for preference, translation, and date-format checks.
+
+### Email reading privacy
+
+In **Mailbox settings > Email privacy**, enable **Use private reading for specified sender domains** and enter one domain per line (commas also work). Rules apply only to the current mailbox and match the email's From address, including subdomains: `example.com` matches `sender@example.com` and `sender@mail.example.com`, but not `sender@fakeexample.com` or `sender@example.com.other.test`. Up to 100 domains are accepted; case, duplicate entries and trailing dots are normalized. Enter domain names without URLs, `@` or wildcards. The switch defaults to off for new and existing mailboxes, requires at least one domain when enabled, and retains the list when disabled. Save changes to apply to both existing and new messages. No database migration is required: the policy lives in the mailbox's existing R2 settings JSON as `privacy: { enabled, domains }`.
+
+Only matching messages use private reading, with no proxy or IP pool required. Original HTML is parsed only inside a detached, inert `<template>`; its nodes are never attached to the page. Only escaped text and read-only URL fields are displayed. Remote images, CSS, fonts, media, embedded pages, scripts, forms, redirects, and link previews are not loaded from these messages. Other senders (or disabling the switch) use sanitized HTML in a sandboxed iframe, which permits HTTPS images. Both single-message and thread views choose the policy independently per sender; while settings are loading or unavailable, the reader stays private to prevent a flash of remote content. Attachments remain available for explicit download or preview.
+
+The reader lists HTTP(S) links, including magic/sign-in links, without opening, checking, prefetching, unwrapping redirects, or consuming them. It decodes HTML entities in attributes but preserves URL tokens, query order, and fragments. Relative links, executable schemes, and URLs containing credentials are excluded. Link extraction does not certify a link's authenticity. Opening a copied link in another browser still contacts that site and can reveal the link identifier and network address. Read/open tracking protection does not change optional forwarding, automatic replies, or AI processing settings; leave those features disabled if not needed. No QQ mailbox is required.
+
+After `npm ci` and `npx playwright install chromium`, run `npm run test:privacy` for local Worker/API policy validation, persistence and permissions, plus real Chromium checks of zero external requests for protected messages, normal HTML for other senders, settings save/reload, copying and source display in both mail views. Alternatively set `PRIVACY_TEST_BROWSER` to an installed Chromium/Chrome executable. No production mail or live magic link is used.
 
 ### Mailbox and system settings
 

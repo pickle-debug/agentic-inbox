@@ -3,12 +3,12 @@
 //     https://opensource.org/licenses/Apache-2.0
 
 import EmailAttachmentList from "~/components/EmailAttachmentList";
-import EmailIframe from "~/components/EmailIframe";
-import { formatDetailDate, rewriteInlineImages } from "~/lib/utils";
+import EmailBody, { type EmailReadingPolicyProps } from "~/components/EmailBody";
+import { formatDetailDate } from "~/lib/utils";
 import type { Email } from "~/types";
 import { useI18n } from "~/hooks/useI18n";
 
-interface SingleMessageViewProps {
+interface SingleMessageViewProps extends EmailReadingPolicyProps {
 	email: Email;
 	mailboxId?: string;
 	onPreviewImage: (url: string, filename: string) => void;
@@ -18,6 +18,8 @@ export default function SingleMessageView({
 	email,
 	mailboxId,
 	onPreviewImage,
+	privacySettings,
+	settingsLoaded,
 }: SingleMessageViewProps) {
 	const { t, dateLocale } = useI18n();
 	return (
@@ -42,14 +44,7 @@ export default function SingleMessageView({
 			</div>
 
 			<div className="flex-1 min-h-0">
-				<EmailIframe
-					body={rewriteInlineImages(
-						email.body || "",
-						mailboxId || "",
-						email.id,
-						email.attachments,
-					)}
-				/>
+				<EmailBody email={email} mailboxId={mailboxId} privacySettings={privacySettings} settingsLoaded={settingsLoaded} />
 			</div>
 
 			<EmailAttachmentList

@@ -25,8 +25,8 @@ interface EmailIframeProps {
  *   script that posts its body height to the parent via `postMessage`.
  *   The `allow-scripts` flag is required for this, but scripts inside
  *   the opaque-origin sandbox cannot access anything useful.
- * - A strict CSP meta tag blocks external resource loads inside the
- *   iframe as a defense-in-depth layer.
+ * - CSP restricts resource types; normal HTML mode permits HTTPS images.
+ *   The private reader does not mount this component.
  */
 export default function EmailIframe({ body, autoSize }: EmailIframeProps) {
 	const { t } = useI18n();
@@ -144,6 +144,7 @@ ul, ol { padding-left: 20px; margin: 4px 0; }
 	return (
 		<iframe
 			ref={iframeRef}
+			referrerPolicy="no-referrer"
 			className="block w-full border-0"
 			style={autoSize ? { height: `${height}px` } : { height: "100%" }}
 			sandbox="allow-scripts allow-popups allow-top-navigation-by-user-activation"

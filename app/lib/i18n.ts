@@ -32,6 +32,9 @@ export function languageCookie(locale: Locale, secure: boolean): string {
 
 // Translate known API/validation messages at the display boundary; keep unknown diagnostics intact.
 const messages = [
+	["Enter a valid sender domain, such as example.com.", "请输入有效的发件人域名，例如 example.com。"],
+	["Configure at most 100 sender domains.", "最多配置 100 个发件人域名。"],
+	["Enter at least one sender domain before enabling private reading.", "开启隐私模式前，请至少填写一个发件人域名。"],
 	["Attachments can be up to 25 MB in total.", "附件总大小不得超过 25 MB。"],
 	["No mailbox selected.", "尚未选择邮箱。"],
 	["Add at least one recipient.", "请至少添加一位收件人。"],

@@ -13,16 +13,15 @@ import {
 	TrashIcon,
 } from "@phosphor-icons/react";
 import EmailAttachmentList from "~/components/EmailAttachmentList";
-import EmailIframe from "~/components/EmailIframe";
+import EmailBody, { type EmailReadingPolicyProps } from "~/components/EmailBody";
 import {
 	formatDetailDate,
 	formatShortDate,
-	rewriteInlineImages,
 	stripHtml,
 } from "~/lib/utils";
 import type { Email } from "~/types";
 
-interface ThreadMessageProps {
+interface ThreadMessageProps extends EmailReadingPolicyProps {
 	email: Email;
 	mailboxId?: string;
 	mailboxEmail?: string;
@@ -68,6 +67,8 @@ export default function ThreadMessage({
 	onDeleteDraft,
 	onViewSource,
 	onPreviewImage,
+	privacySettings,
+	settingsLoaded,
 }: ThreadMessageProps) {
 	const { t, dateLocale } = useI18n();
 	const isSelf = email.sender === mailboxEmail;
@@ -159,15 +160,7 @@ export default function ThreadMessage({
 				</div>
 
 				<div className="md:ml-[42px]">
-					<EmailIframe
-						body={rewriteInlineImages(
-							email.body || "",
-							mailboxId || "",
-							email.id,
-							email.attachments,
-						)}
-						autoSize
-					/>
+					<EmailBody email={email} mailboxId={mailboxId} privacySettings={privacySettings} settingsLoaded={settingsLoaded} autoSize />
 				</div>
 
 				{isDraft && (onSendDraft || onEditDraft || onDeleteDraft) && (

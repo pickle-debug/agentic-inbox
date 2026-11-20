@@ -8,6 +8,7 @@ import { useParams } from "react-router";
 import { useMailbox, useUpdateMailbox } from "~/queries/mailboxes";
 import { autoReplySettingsSchema } from "../../shared/automatic-replies";
 import { forwardingSettingsSchema } from "../../shared/forwarding";
+import { emailPrivacySettingsSchema } from "../../shared/email-privacy";
 import { useI18n } from "~/hooks/useI18n";
 import MailboxPasswordSettings from "~/components/MailboxPasswordSettings";
 
@@ -30,6 +31,9 @@ function MailboxSettingsForm({ mailboxId }: { mailboxId: string | undefined }) {
 	const [forwardingEnabled, setForwardingEnabled] = useState(false);
 	const [forwardingEmail, setForwardingEmail] = useState("");
 	const [forwardingError, setForwardingError] = useState("");
+	const [privacyEnabled, setPrivacyEnabled] = useState(false);
+	const [privacyDomains, setPrivacyDomains] = useState("");
+	const [privacyError, setPrivacyError] = useState("");
 	const [isSaving, setIsSaving] = useState(false);
 	const [saveError, setSaveError] = useState("");
 
@@ -43,6 +47,9 @@ function MailboxSettingsForm({ mailboxId }: { mailboxId: string | undefined }) {
 			setForwardingEnabled(mailbox.settings?.forwarding?.enabled === true);
 			setForwardingEmail(mailbox.settings?.forwarding?.email || "");
 			setForwardingError("");
+			setPrivacyEnabled(mailbox.settings?.privacy?.enabled === true);
+			setPrivacyDomains((mailbox.settings?.privacy?.domains || []).join("\n"));
+			setPrivacyError("");
 		}
 	}, [mailbox]);
 
@@ -58,17 +65,23 @@ function MailboxSettingsForm({ mailboxId }: { mailboxId: string | undefined }) {
 			enabled: forwardingEnabled,
 			email: forwardingEmail,
 		});
+		const privacy = emailPrivacySettingsSchema.safeParse({
+			enabled: privacyEnabled,
+			domains: privacyDomains.split(/[\s,，;；]+/).filter(Boolean),
+		});
 		setAutoReplyErrors(autoReply.success ? {} : {
 			subject: autoReply.error.flatten().fieldErrors.subject?.[0],
 			message: autoReply.error.flatten().fieldErrors.message?.[0],
 		});
 		setForwardingError(forwarding.success ? "" : forwarding.error.issues[0].message);
-		if (!autoReply.success || !forwarding.success) return;
+		setPrivacyError(privacy.success ? "" : privacy.error.issues[0].message);
+		if (!autoReply.success || !forwarding.success || !privacy.success) return;
 		setIsSaving(true);
 		const settings = {
 			fromName: displayName,
 			autoReply: autoReply.data,
 			forwarding: forwarding.data,
+			privacy: privacy.data,
 		};
 		try {
 			await updateMailboxMutation.mutateAsync({ mailboxId, settings });
@@ -130,6 +143,19 @@ function MailboxSettingsForm({ mailboxId }: { mailboxId: string | undefined }) {
 						<Input label={t("Email", "邮箱")} type="email" value={mailbox.email} disabled />
 					</div>
 				</div>
+
+				<section className="rounded-lg border border-kumo-line bg-kumo-base p-5" aria-labelledby="email-privacy-heading">
+					<h2 id="email-privacy-heading" className="text-sm font-medium text-kumo-default mb-4">{t("Email privacy", "邮件隐私保护")}</h2>
+					<label className="flex items-start gap-3 cursor-pointer">
+						<input type="checkbox" checked={privacyEnabled} disabled={isSaving} onChange={event => { setPrivacyEnabled(event.target.checked); setPrivacyError(""); }} className="mt-0.5 size-4 shrink-0 accent-kumo-accent" />
+						<span className="text-sm text-kumo-default">{t("Use private reading for specified sender domains", "对指定发件人域名启用隐私阅读")}</span>
+					</label>
+					<p className="mt-2 text-xs text-kumo-subtle">{t("Matching messages show text, extracted links and HTML source without rendering HTML or loading remote content. Other messages display normally. Off by default.", "匹配的邮件仅显示文本、提取的链接及 HTML 源码，不渲染 HTML、不加载远程内容。其他邮件正常显示。默认关闭。")}</p>
+					<label htmlFor="privacy-domains" className="mt-4 mb-2 block text-sm text-kumo-default">{t("Sender domains", "发件人域名")}</label>
+					<textarea id="privacy-domains" value={privacyDomains} disabled={isSaving} rows={4} maxLength={25500} placeholder={"example.com\nmail.example.org"} aria-invalid={!!privacyError} aria-describedby={privacyError ? "privacy-domains-help privacy-domains-error" : "privacy-domains-help"} onChange={event => { setPrivacyDomains(event.target.value); setPrivacyError(""); }} className="w-full resize-y rounded-lg border border-kumo-line bg-kumo-recessed px-3 py-2 text-sm text-kumo-default focus:outline-none focus:ring-1 focus:ring-kumo-ring disabled:opacity-50" />
+					<p id="privacy-domains-help" className="mt-2 text-xs text-kumo-subtle">{t("One domain per line, or separate with commas. Includes subdomains: example.com also matches mail.example.com. Enter domains only, without @, URLs or wildcards. Up to 100 domains; the list is kept when switched off.", "每行一个，也可用逗号分隔。包含子域名：example.com 同时匹配 mail.example.com。仅填写域名，不含 @、网址或通配符。最多 100 个，关闭后保留名单。")}</p>
+					{privacyError && <p id="privacy-domains-error" role="alert" className="mt-2 text-xs text-kumo-error">{message(privacyError)}</p>}
+				</section>
 
 				{/* Automatic Replies */}
 				<div className="rounded-lg border border-kumo-line bg-kumo-base p-5">

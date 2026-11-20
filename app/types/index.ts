@@ -3,6 +3,7 @@
 //     https://opensource.org/licenses/Apache-2.0
 
 import type { AutoReplySettings } from "../../shared/automatic-replies";
+import type { EmailPrivacySettings } from "../../shared/email-privacy";
 
 export interface SignatureSettings {
 	enabled: boolean;
@@ -11,6 +12,7 @@ export interface SignatureSettings {
 }
 
 export interface MailboxSettings {
+	privacy?: EmailPrivacySettings;
 	fromName?: string;
 	forwarding?: { enabled: boolean; email: string };
 	signature?: SignatureSettings;

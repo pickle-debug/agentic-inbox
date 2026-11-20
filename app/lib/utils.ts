@@ -9,6 +9,7 @@
  * Re-export for backwards compatibility with existing imports.
  */
 import DOMPurify from "dompurify";
+import { extractEmailContent } from "~/lib/email-content";
 import { formatQuotedDate } from "shared/dates";
 import type { Attachment } from "~/types";
 
@@ -56,19 +57,7 @@ export function toEmailListValue(addresses: string[]): string | string[] | undef
  * Uses DOM APIs so must only be called client-side.
  */
 export function htmlToPlainText(html: string): string {
-	// Sanitize with DOMPurify before DOM parsing to prevent XSS during innerHTML assignment.
-	// DOMPurify strips all dangerous content (scripts, event handlers, etc.)
-	// while preserving structural HTML for text extraction.
-	const sanitized = DOMPurify.sanitize(html);
-	const div = document.createElement("div");
-	div.innerHTML = sanitized
-		.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
-		.replace(/<br\s*\/?>/gi, "\n")
-		.replace(/<\/p>/gi, "\n\n")
-		.replace(/<p[^>]*>/gi, "")
-		.replace(/<div[^>]*>/gi, "")
-		.replace(/<\/div>/gi, "\n");
-	return (div.textContent || div.innerText || "").trim();
+	return extractEmailContent(html).text;
 }
 
 /**
@@ -163,9 +152,8 @@ export function buildQuotedReplyBlock(
 	const escapedSender = escapeHtml(sender);
 
 	// Sanitize the body to plain text to prevent stored XSS.
-	// The original HTML renders safely in the sandboxed iframe, but quoted
-	// reply blocks are injected into the compose editor where raw HTML would
-	// execute. Convert to escaped plain text instead.
+	// Quoted reply blocks enter the live compose editor. Keep the original
+	// email's markup and remote resources out of it by quoting escaped text.
 	const bodyToQuote = escapeHtml(stripHtml(body)).replace(/\n/g, "<br>");
 
 	return `<br><blockquote style="border-left: 2px solid #ccc; margin: 0; padding-left: 1em; color: #666;">On ${formattedDate}, ${escapedSender} wrote:<br><br>${bodyToQuote}</blockquote>`;

@@ -211,6 +211,8 @@ export default function EmailPanel({ emailId }: { emailId: string }) {
 								email={msg}
 								mailboxId={mailboxId}
 								mailboxEmail={currentMailbox?.email}
+								privacySettings={currentMailbox?.settings?.privacy}
+								settingsLoaded={!!currentMailbox}
 								isLast={idx === allMessages.length - 1}
 								isDraft={isDraft}
 								isSending={isDraft ? isSending : false}
@@ -230,6 +232,8 @@ export default function EmailPanel({ emailId }: { emailId: string }) {
 					<SingleMessageView
 						email={email}
 						mailboxId={mailboxId}
+						privacySettings={currentMailbox?.settings?.privacy}
+						settingsLoaded={!!currentMailbox}
 						onPreviewImage={(url, filename) =>
 							setPreviewImage({ url, filename })
 						}
