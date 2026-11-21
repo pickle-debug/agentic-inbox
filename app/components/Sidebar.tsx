@@ -12,6 +12,7 @@ import {
 	PaperPlaneTiltIcon,
 	PencilSimpleIcon,
 	PlusIcon,
+	ShareNetworkIcon,
 	SignOutIcon,
 	TrashIcon,
 	TrayIcon,
@@ -26,6 +27,7 @@ import { supportsInlineCompose, useUIStore } from "~/hooks/useUIStore";
 import api from "~/services/api";
 import { canWrite } from "../../shared/access";
 import { useI18n } from "~/hooks/useI18n";
+import ShareDialog from "~/components/ShareDialog";
 
 const FOLDER_ICONS: Record<string, React.ReactNode> = {
 	[Folders.INBOX]: <TrayIcon size={18} weight="regular" />,
@@ -92,6 +94,7 @@ export default function Sidebar() {
 	const { data: session } = useQuery({ queryKey: ["session"], queryFn: api.getSession });
 	const toastManager = useKumoToastManager();
 	const [isLoggingOut, setIsLoggingOut] = useState(false);
+	const [isShareOpen, setIsShareOpen] = useState(false);
 
 	const handleLogout = async () => {
 		setIsLoggingOut(true);
@@ -252,10 +255,20 @@ export default function Sidebar() {
 				)}
 			</nav>
 			{(session?.role !== "share" || session.permission === "manage") && <div className="shrink-0 border-t border-kumo-line p-2">
+				{/* 当前邮箱的分享入口放在“邮箱设置”上方，阅读时无需回到域名管理页。 */}
+				{session?.role === "admin" && mailboxId && <Button
+					variant="ghost"
+					size="sm"
+					className="mb-1 w-full justify-start"
+					icon={<ShareNetworkIcon size={18} />}
+					onClick={() => setIsShareOpen(true)}
+					aria-label={t(`Share mailbox ${mailboxId}`, `分享邮箱 ${mailboxId}`)}
+				>{t("Share mailbox", "分享邮箱")}</Button>}
 				<FolderLink to={`/mailbox/${encodeURIComponent(mailboxId!)}/settings`} icon={<GearSixIcon size={18} />} label={t("Mailbox settings", "邮箱设置")} onClick={handleNavClick} />
 			</div>
 
 			}
+			{session?.role === "admin" && isShareOpen && mailboxId && <ShareDialog scope="mailbox" target={mailboxId} onClose={() => setIsShareOpen(false)}/>}
 
 			{/* Create folder dialog */}
 			<Dialog.Root

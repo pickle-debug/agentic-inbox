@@ -87,6 +87,15 @@ try {
 	await page.getByRole('textbox', {name: '搜索邮箱'}).fill('jobs');
 	assert.equal(await page.getByRole('link').filter({hasText: 'hr@zaku.net'}).count(), 0);
 	await page.getByRole('textbox', {name: '搜索邮箱'}).fill('');
+	// 切换域名只更新管理列表：每个域名组都必须还能在概览页分享。
+	await page.getByRole('navigation', {name: '域名列表'}).getByRole('button', {name: /other\.net/}).click();
+	await page.getByRole('link').filter({hasText: 'hello@other.net'}).waitFor();
+	assert.equal(await page.getByRole('link', {name: '进入阅读区'}).count(), 1, '选择域名后仍停留在域名概览');
+	await page.getByRole('button', {name: '分享域名组', exact: true}).click();
+	await page.getByText('分享访问 · other.net', {exact: true}).waitFor();
+	await page.getByRole('button', {name: '关闭', exact: true}).click();
+	await page.getByRole('navigation', {name: '域名列表'}).getByRole('button', {name: /zaku\.net/}).click();
+	await page.getByRole('link').filter({hasText: 'hr@zaku.net'}).waitFor();
 	await page.screenshot({path: '/tmp/inbox-domain-groups.png', fullPage: true});
 	await page.getByRole('button', {name: '分享域名组', exact: true}).click();
 	await page.getByRole('textbox', {name: '凭证备注'}).fill('Team read-only');
@@ -130,6 +139,13 @@ try {
 	assert.equal(await rail.getByRole('link', {name: '域名管理'}).count(), 0, 'domain management is reached from the top logo');
 	const railOrder = () => rail.getByRole('navigation', {name: '此域名下的邮箱'}).getByRole('link').evaluateAll(links => links.map(link => link.getAttribute('title')));
 	assert.deepEqual(await railOrder(), ['hr@zaku.net', 'jobs@zaku.net'], 'mailboxes without newer mail keep alphabetical order');
+	// 阅读区底部可直接分享域名组，邮箱设置上方可直接分享当前邮箱。
+	await rail.getByRole('button', {name: '分享域名组 zaku.net', exact: true}).click();
+	await page.getByText('分享访问 · zaku.net', {exact: true}).waitFor();
+	await page.getByRole('button', {name: '关闭', exact: true}).click();
+	await folders.getByRole('button', {name: '分享邮箱 hr@zaku.net', exact: true}).click();
+	await page.getByText('分享访问 · hr@zaku.net', {exact: true}).waitFor();
+	await page.getByRole('button', {name: '关闭', exact: true}).click();
 	await mailArea.getByText('Welcome to the team', {exact: true}).click();
 	await page.getByRole('region', {name: '邮件隐私阅读'}).waitFor();
 	assert.equal(await page.locator('iframe').count(), 0, 'the system sender policy protects mailboxes that never set rules');
@@ -198,6 +214,8 @@ try {
 	assert.equal(await rail.getByRole('heading', {name: 'zaku.net'}).count(), 1);
 	assert.equal(await rail.getByRole('link').filter({hasText: 'hello@other.net'}).count(), 0);
 	assert.equal(await page.getByRole('button', {name: '写邮件', exact: true}).count(), 0);
+	assert.equal(await rail.getByRole('button', {name: /分享域名组/}).count(), 0, '分享访客不能再次分享域名');
+	assert.equal(await folders.getByRole('button', {name: /分享邮箱/}).count(), 0, '分享访客不能再次分享邮箱');
 	await mailArea.getByText('Welcome to the team', {exact: true}).click();
 	await page.getByRole('region', {name: '邮件隐私阅读'}).waitFor();
 	assert.equal(await page.getByRole('button', {name: '回复', exact: true}).count(), 0);

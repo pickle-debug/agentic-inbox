@@ -144,7 +144,8 @@ export default function HomeRoute() {
 								aria-current={selected === domain ? "true" : undefined}
 								className={`flex shrink-0 items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm ${selected === domain ? "bg-kumo-base font-semibold text-kumo-default shadow-sm" : "text-kumo-subtle hover:bg-kumo-tint"}`}
 								onClick={() => {
-									setParams(params.get("overview") === "1" ? {domain, overview: "1"} : {domain});
+									// 选择域名只切换管理列表；进入阅读区由右侧的“进入阅读区”链接负责。
+									setParams({domain, overview: "1"});
 									setSearch("");
 								}}
 							>

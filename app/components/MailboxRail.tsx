@@ -1,5 +1,5 @@
 import { Button, Input } from "@cloudflare/kumo";
-import { EnvelopeIcon } from "@phosphor-icons/react";
+import { EnvelopeIcon, ShareNetworkIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
@@ -11,6 +11,7 @@ import { usePermissions } from "~/hooks/usePermissions";
 import { useUnreadBadgeStyle } from "~/hooks/useUnreadBadgeStyle";
 import { useI18n } from "~/hooks/useI18n";
 import UnreadBadge from "~/components/UnreadBadge";
+import ShareDialog from "~/components/ShareDialog";
 import api from "~/services/api";
 import type { MailboxSummary } from "~/types";
 
@@ -32,6 +33,7 @@ export default function MailboxRail({domain}: {domain: string}) {
 	const {closeSidebar, closePanel, closeComposeModal} = useUIStore();
 	const navigate = useNavigate();
 	const [search, setSearch] = useState("");
+	const [shareOpen, setShareOpen] = useState(false);
 	const boxes = (query.data ?? []).filter(box => mailboxDomain(box.email) === domain).sort(byLatestMail);
 	const domains = [...new Set([domain, ...(config.data?.domains ?? [])])].sort();
 	const single = identity?.role === "mailbox" || (identity?.role === "share" && identity.scope === "mailbox");
@@ -67,5 +69,10 @@ export default function MailboxRail({domain}: {domain: string}) {
 			{!query.isPending && !query.error && boxes.length === 0 && <p className="p-3 text-xs text-kumo-subtle">{t("Waiting for the first mailbox…", "等待首封来信创建邮箱…")}</p>}
 			{needle && boxes.length > 0 && shown.length === 0 && <p className="p-3 text-xs text-kumo-subtle">{t("No matching mailboxes.", "没有匹配的邮箱。")}</p>}
 		</nav>
+		{/* 阅读区里也要能分享整个域名组，否则必须先回到域名管理页。 */}
+		{identity?.role === "admin" && <div className="shrink-0 border-t border-kumo-line p-2">
+			<Button size="sm" variant="secondary" icon={<ShareNetworkIcon size={16}/>} className="w-full" onClick={() => setShareOpen(true)} aria-label={t(`Share domain group ${domain}`, `分享域名组 ${domain}`)}>{t("Share domain group", "分享域名组")}</Button>
+		</div>}
+		{shareOpen && <ShareDialog scope="domain" target={domain} onClose={() => setShareOpen(false)}/>}
 	</aside>;
 }
